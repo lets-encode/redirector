@@ -14,8 +14,12 @@ the `name → campaign_id` mapping and the redirect/branch logic around it.
 
 ## Architecture rationale
 
-* **Python + FastAPI, server-rendered Jinja templates, zero client-side JS.**
-  Four direct dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`); the data
+* **Python + FastAPI, server-rendered Jinja templates.** The pages render and
+  work fully without JavaScript; the only script is a small progressive
+  enhancement — the light/dark theme toggle — carried over from the Let's
+  Encode! site so these pages match its look (shared `styles.css`, logo, and
+  favicons are served from `app/static/` under `/assets/`). Four direct
+  dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`); the data
   layer is stdlib `sqlite3`.
 * **SQLite, file-backed, WAL mode.** One table, a handful of writes per day,
   reads that are a single primary-key lookup. A database server would add an

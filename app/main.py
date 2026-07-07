@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -33,7 +34,8 @@ from . import validation
 from .config import Settings
 from .db import SlugExists, Store
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+_HERE = Path(__file__).parent
+templates = Jinja2Templates(directory=str(_HERE / "templates"))
 
 
 def _mint_campaign_id() -> str:
@@ -61,6 +63,12 @@ def create_app(settings: Settings) -> FastAPI:
     store = Store(settings.db_path)
     app.state.settings = settings
     app.state.store = store
+
+    # Styling assets (CSS, logo, favicons) shared with the Let's Encode! site so
+    # these pages look like part of it. "assets" is a reserved name (see config),
+    # and "/assets/…" always carries a slash so it never matches the single-
+    # segment /{name} slug route.
+    app.mount("/assets", StaticFiles(directory=str(_HERE / "static")), name="assets")
 
     # ---------------------------------------------------------------- public
 

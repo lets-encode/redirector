@@ -1,0 +1,1332 @@
+/* =========================================================================
+   Let's Encode! — landing page styles
+   Palette derived from the logo's three hands:
+     orange #ffa76d   blue #6dc3ff   green #76de76
+   ========================================================================= */
+
+:root {
+  --orange: #ffa76d;
+  --blue: #6dc3ff;
+  --green: #76de76;
+
+  --ink: #1f2433;
+  --ink-soft: #4a5167;
+  --ink-faint: #79809a;
+  --line: #e6e8f0;
+  --bg: #ffffff;
+  --bg-alt: #f7f8fb;
+  --bg-tint: #eef6ff;
+  --card: #ffffff;
+  --topbar-bg: rgba(255, 255, 255, .9);
+
+  --accent: #2563c9;
+  --accent-dark: #1b49a0;
+  --link: #2f68c4;
+
+  --maxw: 1080px;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(31, 36, 51, .06), 0 8px 28px rgba(31, 36, 51, .07);
+
+  --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Dark theme. Applied via [data-theme="dark"] on <html>, which an inline head
+   script sets from prefers-color-scheme before first paint (no flash) and the
+   nav bulb toggle flips for the current visit. Nothing is persisted — no
+   localStorage/cookies — so no consent banner is needed. */
+[data-theme="dark"] {
+  --ink: #ecebe6;
+  --ink-soft: #bcc1d1;
+  --ink-faint: #8b92a8;
+  --line: #333c53;
+  --bg: #1b2030;
+  --bg-alt: #212739;
+  --bg-tint: #253150;
+  --card: #283048;
+  --topbar-bg: rgba(27, 32, 48, .85);
+
+  --accent: #7bb0f7;
+  --accent-dark: #a9ccff;
+  --link: #8fbcff;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 30px rgba(0, 0, 0, .4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---- Skip link (a11y) -------------------------------------------------- */
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--ink);
+  color: var(--bg);
+  padding: .6rem 1rem;
+  z-index: 100;
+  border-radius: 0 0 8px 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+/* ---- Top bar ----------------------------------------------------------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--topbar-bg);
+  backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar .wrap {
+  position: relative;
+  /* anchor for the mobile nav dropdown */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
+  gap: 1rem;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+}
+
+.brand:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* Logo swap: the monochrome nav artwork (fill-less hands) shows at rest and
+   cross-fades to the full-colour logo on hover. The COLOUR svg is the reference
+   — it sits in flow and sets the box (width + rendered height, 120px wide). The
+   two files are the same artwork but framed differently (the mono png has wider
+   margins + is ~5% smaller at a given width), so the mono png is overlaid
+   absolutely and up-scaled/offset until its ink registers onto the colour ink. */
+.brand-logo {
+  position: relative;
+  display: block;
+  width: 120px;
+  /* match the rendered width of the IWK hero-corner logo */
+  overflow: hidden;
+}
+
+.brand-logo-img {
+  display: block;
+  transition: opacity .15s ease;
+}
+
+/* colour svg — in flow, defines the slot */
+.brand-logo-hover {
+  width: 120px;
+  height: auto;
+  opacity: 0;
+}
+
+/* dark-mode colour svg (coloured gloves + cream text) — overlay, same framing as
+   the colour svg, revealed on hover in dark mode */
+.brand-logo-hover-dark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 120px;
+  height: auto;
+  opacity: 0;
+}
+
+/* mono png — overlay, sized/positioned to match the colour ink */
+.brand-logo-rest,
+.brand-logo-rest-dark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 126px;
+  height: auto;
+}
+
+/* cream png — the dark-mode resting artwork (same framing as the mono png, so it
+   reuses the exact overlay geometry). Hidden until dark mode. */
+.brand-logo-rest-dark {
+  opacity: 0;
+}
+
+.brand:hover .brand-logo-rest {
+  opacity: 0;
+}
+
+.brand:hover .brand-logo-hover {
+  opacity: 1;
+}
+
+/* Settle back to monochrome after a touch tap (JS adds .is-mono once the hero
+   combo has played). Touch leaves :hover stuck "on", so these must outrank the
+   :hover rules above — same specificity, so they rely on coming later in source.
+   Also drops the hover lift so the logo returns to rest. */
+.brand.is-mono .brand-logo-rest {
+  opacity: 1;
+}
+
+.brand.is-mono .brand-logo-hover {
+  opacity: 0;
+}
+
+.brand.is-mono .brand-logo {
+  transform: none;
+}
+
+/* Plaintext wordmark — shown only on mobile (see the max-width: 560px block),
+   where it replaces the logo image. Hidden by default on wider screens. */
+.brand-text {
+  display: none;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.nav {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.nav a {
+  color: var(--ink-soft);
+  font-size: .95rem;
+}
+
+.nav a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.nav-toggle {
+  display: none;
+}
+
+/* shown only on mobile (see media query) */
+
+/* Right-hand cluster of the top bar: nav links, the theme bulb, and (on mobile)
+   the burger. Keeping them in one flex group lets the bulb sit just left of the
+   burger on narrow screens while trailing the nav links on wide ones. */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+/* ---- Theme (light/dark) bulb toggle ------------------------------------ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bulb {
+  display: block;
+}
+
+.bulb-glass {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  transition: fill .2s ease;
+}
+
+.bulb-filament {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .55;
+  transition: opacity .2s ease;
+}
+
+.bulb-rays {
+  opacity: 0;
+  transform-origin: 12px 11px;
+  transition: opacity .2s ease, transform .2s ease;
+}
+
+/* Lit bulb in dark mode: a warm glowing shine (long rays, filled glass, bright
+   filament, and a soft halo) so it reads unmistakably as "on". */
+[data-theme="dark"] .theme-toggle {
+  color: #ffdf85;
+  border-color: rgba(255, 223, 133, .55);
+}
+
+[data-theme="dark"] .theme-toggle:hover {
+  color: #ffe9a6;
+  border-color: #ffdf85;
+  background: rgba(255, 223, 133, .14);
+}
+
+[data-theme="dark"] .bulb {
+  filter: drop-shadow(0 0 3px rgba(255, 210, 110, .8));
+}
+
+[data-theme="dark"] .bulb-glass {
+  fill: rgba(255, 223, 133, .45);
+}
+
+[data-theme="dark"] .bulb-filament {
+  opacity: 1;
+}
+
+[data-theme="dark"] .bulb-rays {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .theme-toggle,
+  .bulb-glass,
+  .bulb-filament,
+  .bulb-rays {
+    transition: none;
+  }
+}
+
+/* ---- Hero -------------------------------------------------------------- */
+.hero {
+  background:
+    radial-gradient(60% 90% at 15% 0%, rgba(109, 195, 255, .18), transparent 60%),
+    radial-gradient(60% 90% at 85% 10%, rgba(118, 222, 118, .18), transparent 60%),
+    radial-gradient(50% 80% at 50% 100%, rgba(255, 167, 109, .16), transparent 60%),
+    var(--bg-alt);
+  border-bottom: 1px solid var(--line);
+  padding: clamp(2.5rem, 6vw, 5rem) 0;
+  text-align: center;
+  position: relative;
+}
+
+.hero .logo {
+  width: min(88vw, 520px);
+  margin: 0 auto 1.75rem;
+}
+
+.hero .logo svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Institutional logos pinned to the top corners of the hero. */
+.hero-corner {
+  position: absolute;
+  top: clamp(1rem, 3vw, 2rem);
+  display: inline-flex;
+  align-items: center;
+  transition: opacity .15s ease;
+  z-index: 1;
+}
+
+/* Align to the .wrap content edges (where the navbar brand & last item sit)
+   rather than the viewport edges: the wrap is centred at max-width --maxw with
+   1.25rem side padding. */
+.hero-corner-left {
+  /* small extra nudge so IWK's visible left edge lines up with the project
+     logo's first glyph (the brand logo carries a little left bearing) */
+  left: calc(50% - min(50%, var(--maxw) / 2) + 1.25rem + 0.4rem);
+}
+
+.hero-corner-right {
+  right: calc(50% - min(50%, var(--maxw) / 2) + 1.25rem);
+}
+
+.hero-corner img {
+  height: 44px;
+  width: auto;
+  display: block;
+}
+
+.hero-corner:hover {
+  opacity: .85;
+}
+
+.hero .tagline {
+  font-size: clamp(1.15rem, 2.4vw, 1.55rem);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 auto .75rem;
+  max-width: 36ch;
+}
+
+.hero .lede {
+  color: var(--ink-soft);
+  max-width: 56ch;
+  margin: 0 auto 1.75rem;
+}
+
+.hero .cta-row {
+  display: flex;
+  gap: .75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---- Buttons ----------------------------------------------------------- */
+.btn {
+  display: inline-block;
+  padding: .7rem 1.3rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: .98rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.btn:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+
+.btn-primary:hover {
+  background: var(--accent-dark);
+  color: #fff;
+}
+
+.btn-ghost {
+  background: var(--card);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Sections ---------------------------------------------------------- */
+section {
+  padding: clamp(2.5rem, 5vw, 4rem) 0;
+}
+
+section.alt {
+  background: var(--bg-alt);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.section-head {
+  max-width: 60ch;
+  margin-bottom: 1.75rem;
+}
+
+.section-head h2 {
+  font-size: 2rem;
+  /* fixed, not viewport-relative, so the header hands stay a constant size */
+  margin: 0 0 .4rem;
+}
+
+.section-head .kicker {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 .5rem;
+}
+
+.section-head p {
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.prose p {
+  color: var(--ink-soft);
+  max-width: 68ch;
+}
+
+.prose p+p {
+  margin-top: 1rem;
+}
+
+.prose ul {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  max-width: 68ch;
+  color: var(--ink-soft);
+  display: grid;
+  gap: .5rem;
+}
+
+.prose li strong {
+  color: var(--ink);
+}
+
+/* ---- Goals list -------------------------------------------------------- */
+.goals {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.goals li {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.25rem 1.25rem 1.25rem;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.goals li::before {
+  content: "";
+  display: block;
+  width: 38px;
+  height: 4px;
+  border-radius: 4px;
+  margin-bottom: .85rem;
+  background: var(--blue);
+}
+
+.goals li:nth-child(2)::before {
+  background: var(--green);
+}
+
+.goals li:nth-child(3)::before {
+  background: var(--orange);
+}
+
+/* ---- People grids ------------------------------------------------------ */
+.people {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.people li {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+  box-shadow: var(--shadow);
+}
+
+.people .name {
+  font-weight: 700;
+  display: block;
+}
+
+.people .role {
+  color: var(--ink-soft);
+  font-size: .92rem;
+  display: block;
+  margin-top: .2rem;
+}
+
+/* In-text links: a distinct link colour that's clearly different from the body
+   text without shouting, brightening to the light-blue accent on hover (the same
+   feedback as the nav links). */
+.people a,
+.lede a,
+.prose a,
+.funding p a,
+.fund-meta a,
+.footer a {
+  color: var(--link);
+}
+
+.people a:hover,
+.lede a:hover,
+.prose a:hover,
+.funding p a:hover,
+.fund-meta a:hover,
+.footer a:hover {
+  color: var(--accent);
+}
+
+.people .lead-badge {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--accent-dark);
+  background: var(--bg-tint);
+  border-radius: 999px;
+  padding: .15rem .55rem;
+  vertical-align: middle;
+  margin-left: .15rem;
+}
+
+/* ---- Logo wall (institutions) ----------------------------------------- */
+.logos {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.logos li {
+  display: flex;
+}
+
+.logos img {
+  max-width: 100%;
+  max-height: 64px;
+  height: auto;
+  width: auto;
+}
+
+.logos a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 120px;
+  padding: 1.25rem;
+  text-align: center;
+  color: inherit;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.logos a:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
+
+.logos .logo-name {
+  font-weight: 600;
+  font-size: .92rem;
+  color: var(--ink);
+}
+
+.logos .logo-sub {
+  font-size: .8rem;
+  color: var(--ink-faint);
+}
+
+/* ---- Future / campaigns callout --------------------------------------- */
+.callout {
+  background: linear-gradient(120deg, rgba(109, 195, 255, .16), rgba(118, 222, 118, .16));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  text-align: center;
+}
+
+.callout h2 {
+  font-size: 2rem;
+  margin: 0 0 .5rem;
+}
+
+/* match section headings so the hand sizes consistently */
+.callout p {
+  color: var(--ink-soft);
+  max-width: 52ch;
+  margin: 0 auto 1.25rem;
+}
+
+.callout .badge {
+  display: inline-block;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent-dark);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: .25rem .8rem;
+  margin-bottom: 1rem;
+}
+
+/* ---- Funding ----------------------------------------------------------- */
+.funding .fund-meta {
+  display: grid;
+  gap: .75rem 2rem;
+  margin-top: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.funding .fund-meta dt {
+  font-weight: 700;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink-faint);
+}
+
+.funding .fund-meta dd {
+  margin: .15rem 0 0;
+  color: var(--ink);
+}
+
+/* ---- Footer ------------------------------------------------------------ */
+.footer {
+  border-top: 1px solid var(--line);
+  padding: 2rem 0;
+  color: var(--ink-faint);
+  font-size: .9rem;
+}
+
+.footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.footer a {
+  color: var(--link);
+}
+
+.footer-left {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+
+  /* clear the sticky topbar on anchor jumps so the section kicker stays visible
+     (desktop's larger section padding already handles this) */
+  html {
+    scroll-padding-top: 26px;
+  }
+
+  /* smaller corner logos so they clear the centered project logo on narrow screens */
+  .hero-corner img {
+    height: 30px;
+  }
+
+  /* the corner logos are absolutely positioned, so add top padding to push the
+     centered project logo down clear of them (logo height + inset + breathing room) */
+  .hero {
+    padding-top: 5.5rem;
+  }
+
+  /* on mobile the brand is plain text (no left bearing) and the burger sits at
+     the gutter, so drop the desktop nudge and pull both logos left to line up */
+  .hero-corner-left {
+    left: 1.25rem;
+  }
+
+  .hero-corner-right {
+    right: 1.45rem;
+  }
+
+  /* tighten the right cluster so the bulb sits snug to the left of the burger */
+  .topbar-right {
+    gap: .6rem;
+  }
+
+  /* burger button on the right; brand stays on the left */
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 38px;
+    padding: 0;
+    cursor: pointer;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .nav-toggle-bars,
+  .nav-toggle-bars::before,
+  .nav-toggle-bars::after {
+    box-sizing: border-box;
+    width: 20px;
+    height: 2px;
+    background: var(--ink);
+    border-radius: 2px;
+  }
+
+  .nav-toggle-bars {
+    position: relative;
+    display: block;
+  }
+
+  .nav-toggle-bars::before,
+  .nav-toggle-bars::after {
+    content: "";
+    position: absolute;
+    left: 0;
+  }
+
+  .nav-toggle-bars::before {
+    top: -6px;
+  }
+
+  .nav-toggle-bars::after {
+    top: 6px;
+  }
+
+  /* the same nav links, as a dropdown panel under the bar */
+  .nav {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0;
+    min-width: 220px;
+    padding: .4rem;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+    box-shadow: var(--shadow);
+  }
+
+  .nav.open {
+    display: flex;
+  }
+
+  .nav a {
+    padding: .65rem .75rem;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+
+  .nav a:hover {
+    background: var(--bg-alt);
+    text-decoration: none;
+  }
+}
+
+/* =========================================================================
+   Header hands — a small cartoon hand "tweaks" each section heading, echoing
+   the logo. A target glyph is wrapped in .gx; .hand is the positioning wrapper
+   (resting placement set per-heading via CSS vars: --s size, --r tilt,
+   --hx/--dx/--hb position, --dip reach, --ovl overlap), and .hpic is the image
+   that runs the animation about its own pivot (--ox/--oy). The image transforms
+   are additive to the wrapper's resting transform. Driven by lets-encode-logo.js.
+   ========================================================================= */
+.gx {
+  position: relative;
+  display: inline-block;
+}
+
+/* Keeps a word intact when a hand splits it: the .gx wrapper is inline-block,
+   which would otherwise let the line break mid-word (e.g. "camp"/"aign"). The
+   word's text fragments + its .gx live inside .gw so wrapping happens only at
+   the spaces between words, never inside the hand markup.
+   inline-block (not merely nowrap) makes the word a firm atomic unit — Gecko
+   (Firefox Android) still takes the wrap opportunity around the inline-block
+   .gx inside a plain nowrap *inline*, so the word must be inline-block too. */
+.gw {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.gly {
+  display: inline-block;
+  transition: transform .25s ease;
+}
+
+.hand {
+  position: absolute;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.hpic {
+  display: block;
+  width: auto;
+  height: var(--s, 1.4em);
+  transform-origin: var(--ox, 50%) var(--oy, 100%);
+  transition: transform .25s ease;
+}
+
+/* A few hands (measure-blue, wave-pink, palm-gold) ship in two variants: the
+   original for light mode, and a dark-mode version with an added dark contour
+   that hides the bright glove edge (which would otherwise glow on the dark
+   background). Only the matching one is shown per theme. */
+.hpic-night {
+  display: none;
+}
+
+[data-theme="dark"] .hpic-day {
+  display: none;
+}
+
+[data-theme="dark"] .hpic-night {
+  display: block;
+}
+
+/* resting placement (above / below / beside / mirrored-right / centred-under) */
+.gx.above .hand {
+  left: calc(var(--hx, 50%) + var(--dx, 0em));
+  bottom: calc(100% - var(--dip, .16em));
+  transform: translateX(-50%) rotate(var(--r, 0deg));
+  transform-origin: 50% 100%;
+}
+
+.gx.below .hand {
+  left: calc(var(--hx, 50%) + var(--dx, 0em));
+  top: calc(100% - var(--dip, .12em));
+  transform: translateX(-50%) rotate(var(--r, 0deg)) scaleX(var(--flip, 1));
+  transform-origin: 50% 0%;
+}
+
+.gx.side .hand {
+  right: calc(100% - var(--ovl, .06em));
+  bottom: var(--hb, -.12em);
+  transform: rotate(var(--r, 0deg));
+  transform-origin: 100% 60%;
+}
+
+.gx.side.r .hand {
+  left: calc(100% - var(--ovl, .06em));
+  right: auto;
+  transform-origin: 0% 60%;
+}
+
+.gx.under .hand {
+  left: calc(50% + var(--dx, 0em));
+  top: calc(100% - var(--dip, .3em));
+  height: var(--s, 1.3em);
+  transform: translateX(-50%) rotate(var(--r, 0deg));
+  transform-origin: 50% 0%;
+}
+
+.gx.above .gly {
+  transform-origin: 50% 92%;
+}
+
+.gx.below .gly {
+  transform-origin: 50% 8%;
+}
+
+/* headings whose hand reaches above the cap line get headroom to clear the
+   kicker; those whose hand hangs below get room so it doesn't touch the body */
+.section-head h2:has(.gx.above) {
+  margin-top: 1.15em;
+}
+
+.section-head h2:has(.gx.below) {
+  margin-bottom: 1.1em;
+}
+
+.section-head h2:has(.gx.under) {
+  margin-bottom: 1.35em;
+}
+
+.callout h2:has(.gx.below) {
+  margin-bottom: 1.1em;
+}
+
+/* Hover is handled in JS (lets-encode-logo.js): entering a heading replays the
+   full gesture once. No CSS :hover hold — one consistent behaviour. */
+
+/* one-shot replay (JS toggles .go: auto every ~6–10s, and on hover) */
+@keyframes glyTwiddle {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  35% {
+    transform: rotate(-7deg)
+  }
+
+  70% {
+    transform: rotate(4deg)
+  }
+}
+
+@keyframes hpicTwiddle {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  35% {
+    transform: rotate(calc(var(--spin, 1) * -7deg))
+  }
+
+  70% {
+    transform: rotate(calc(var(--spin, 1) * 5deg))
+  }
+}
+
+@keyframes glyLift {
+
+  0%,
+  100% {
+    transform: translateY(0)
+  }
+
+  45% {
+    transform: translateY(-.12em)
+  }
+}
+
+@keyframes hpicBob {
+
+  0%,
+  100% {
+    transform: translateY(0)
+  }
+
+  45% {
+    transform: translateY(-.06em)
+  }
+}
+
+@keyframes hpicPoke {
+
+  0%,
+  100% {
+    transform: translateX(0)
+  }
+
+  40% {
+    transform: translateX(.12em)
+  }
+
+  70% {
+    transform: translateX(-.02em)
+  }
+}
+
+@keyframes hpicShake {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  22% {
+    transform: rotate(-3deg)
+  }
+
+  50% {
+    transform: rotate(2deg)
+  }
+
+  78% {
+    transform: rotate(-1deg)
+  }
+}
+
+@keyframes hpicWag {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  28% {
+    transform: rotate(-10deg)
+  }
+
+  58% {
+    transform: rotate(6deg)
+  }
+}
+
+@keyframes hpicNudge {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  45% {
+    transform: rotate(var(--hr, -8deg))
+  }
+}
+
+@keyframes glyNudge {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  45% {
+    transform: rotate(var(--gr, 6deg))
+  }
+}
+
+@keyframes hpicWave {
+
+  0%,
+  100% {
+    transform: rotate(0)
+  }
+
+  18% {
+    transform: rotate(-10deg)
+  }
+
+  42% {
+    transform: rotate(8deg)
+  }
+
+  66% {
+    transform: rotate(-6deg)
+  }
+
+  86% {
+    transform: rotate(4deg)
+  }
+}
+
+@keyframes glyHold {
+
+  0%,
+  100% {
+    transform: translateY(0)
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--lift, .16em)))
+  }
+}
+
+@keyframes handHold {
+
+  0%,
+  100% {
+    transform: rotate(var(--r, 0deg))
+  }
+
+  50% {
+    transform: translateY(calc(-1 * var(--lift, .16em))) rotate(var(--r, 0deg))
+  }
+}
+
+.gx.twiddle.go .gly {
+  animation: glyTwiddle .60s ease-in-out;
+}
+
+.gx.twiddle.go .hpic {
+  animation: hpicTwiddle .60s ease-in-out;
+}
+
+.gx.lift.go .gly {
+  animation: glyLift .55s cubic-bezier(.34, 1.5, .64, 1);
+}
+
+.gx.lift.go .hpic {
+  animation: hpicBob .55s cubic-bezier(.34, 1.5, .64, 1);
+}
+
+.gx.point.go .hpic {
+  animation: hpicPoke .60s ease-in-out;
+}
+
+.gx.shake.go .hpic {
+  animation: hpicShake .65s ease-in-out;
+}
+
+.gx.wag.go .hpic {
+  animation: hpicWag .60s ease-in-out;
+}
+
+.gx.nudge.go .hpic {
+  animation: hpicNudge .55s cubic-bezier(.34, 1.5, .64, 1);
+}
+
+.gx.nudge.go .gly {
+  animation: glyNudge .55s cubic-bezier(.34, 1.5, .64, 1);
+}
+
+.gx.wave.go .hpic {
+  animation: hpicWave .9s ease-in-out;
+}
+
+.gx.hold.go .gly {
+  animation: glyHold .75s ease-in-out;
+}
+
+.gx.hold.go .hand {
+  animation: handHold .75s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .gly,
+  .hpic,
+  .hand {
+    transition: none;
+  }
+
+  .go .gly,
+  .go .hpic,
+  .go .hand {
+    animation: none !important;
+  }
+}
+
+/* =========================================================================
+   Dark-mode component overrides — colour tokens above handle most surfaces;
+   these are the cases that need more than a swapped variable.
+   ========================================================================= */
+
+/* Nav brand in dark mode: the cream artwork rests on the bar, and hovering
+   cross-fades to a dark-mode colour logo (coloured gloves + cream text) — the
+   same colour-reveal as light mode. The light colour logo.svg has black text
+   that would vanish on the dark bar, so it is never shown in dark. */
+[data-theme="dark"] .brand-logo-rest {
+  opacity: 0;
+}
+
+[data-theme="dark"] .brand-logo-rest-dark {
+  opacity: 1;
+}
+
+[data-theme="dark"] .brand:hover .brand-logo-rest-dark,
+[data-theme="dark"] .brand:hover .brand-logo-hover {
+  opacity: 0;
+}
+
+[data-theme="dark"] .brand:hover .brand-logo-hover-dark {
+  opacity: 1;
+}
+
+[data-theme="dark"] .brand.is-mono .brand-logo-rest-dark {
+  opacity: 1;
+}
+
+[data-theme="dark"] .brand.is-mono .brand-logo-hover-dark {
+  opacity: 0;
+}
+
+/* Hero: on dark, the bright triple-glow reads as patchy, so use a single soft
+   cool wash from the top fading into the base for a calm, even backdrop. */
+[data-theme="dark"] .hero {
+  background:
+    radial-gradient(120% 90% at 50% -30%, rgba(123, 176, 247, .10), transparent 60%),
+    radial-gradient(80% 70% at 85% 120%, rgba(118, 222, 118, .05), transparent 60%),
+    var(--bg);
+}
+
+/* "Start or join a campaign" callout: the pale blue/green wash looks washed-out
+   on dark, so drop it to a subtle tinted card that sits on the dark section. */
+[data-theme="dark"] .callout {
+  background:
+    linear-gradient(120deg, rgba(109, 195, 255, .08), rgba(118, 222, 118, .06)),
+    var(--card);
+  border-color: var(--line);
+}
+
+/* Primary button: on dark, a light-blue fill with dark ink reads far better
+   than white-on-light-blue. */
+[data-theme="dark"] .btn-primary {
+  color: #101523;
+}
+
+[data-theme="dark"] .btn-primary:hover {
+  background: var(--accent-dark);
+  color: #101523;
+}
+
+/* Institutional logos carry fixed brand colours (incl. dark-blue wordmarks that
+   vanish on a dark background). Rather than sit them on a light plate, flatten
+   each to a cream silhouette that matches the cream wordmark — brightness(0)
+   collapses the art to black, then the invert/sepia chain lifts it to cream. */
+[data-theme="dark"] .hero-corner img,
+[data-theme="dark"] .logos img {
+  filter: brightness(0) invert(93%) sepia(11%) saturate(360%) hue-rotate(1deg) brightness(97%);
+}
+
+/* Hero wordmark (inline SVG): the letters and note are black ink with no fill
+   declared, so recolour them to cream for the dark background. The coloured
+   gloves and their outlines are left untouched — they read fine on dark. The
+   selectors override inline presentation styles, hence !important. */
+[data-theme="dark"] #svg1 [id^="text"] {
+  fill: #ecebe6 !important;
+  stroke: #ecebe6 !important;
+}
+
+[data-theme="dark"] #svg1 #note path,
+[data-theme="dark"] #svg1 #note circle {
+  fill: #ecebe6 !important;
+  stroke: #ecebe6 !important;
+}

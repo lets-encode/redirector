@@ -1,14 +1,21 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Let's Encode!</h1>
-<p>Start a new encoding campaign. Pick a name for it — the campaign will live at
-<code>letsenco.de/&lt;your-name&gt;</code>.</p>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="post" action="/register">
-  <input type="text" name="name" value="{{ name or '' }}" required
-         minlength="3" maxlength="40" autofocus
-         placeholder="my-campaign-name" aria-label="Campaign name">
-  <button type="submit">Create campaign</button>
-</form>
-<p class="muted">3&ndash;40 characters: lowercase letters, digits, and single internal hyphens.</p>
+<div class="panel">
+  <img class="wordmark wordmark-light" src="/assets/logo.svg" alt="Let's Encode!" width="1391" height="400">
+  <img class="wordmark wordmark-dark" src="/assets/logo-dark.svg" alt="" aria-hidden="true" width="1391" height="400">
+  <h1>Start an encoding campaign</h1>
+  <p>Pick a name for your campaign — it will live at
+     <span class="slug">letsenco.de/&lt;your-name&gt;</span>.</p>
+  {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+  <form method="post" action="/register" class="name-form">
+    <span class="slug-field">
+      <span class="slug-prefix">letsenco.de/</span>
+      <input type="text" name="name" value="{{ name or '' }}" required
+             minlength="3" maxlength="40" autofocus autocomplete="off" spellcheck="false"
+             placeholder="my-campaign-name" aria-label="Campaign name">
+    </span>
+    <button class="btn btn-primary" type="submit">Create campaign</button>
+  </form>
+  <p class="hint">3&ndash;40 characters: lowercase letters, digits, and single internal hyphens.</p>
+</div>
 {% endblock %}

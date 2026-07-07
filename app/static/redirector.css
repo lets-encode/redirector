@@ -1,0 +1,165 @@
+/* =========================================================================
+   Let's Encode! — redirector / slug-registry pages.
+   Layered on top of the shared site stylesheet (styles.css), reusing its
+   colour tokens, top bar, buttons, theme system, and footer. This file only
+   adds the handful of layouts unique to these utility pages: the centred
+   card, the campaign-name form, notices, and the compact wordmark.
+   ========================================================================= */
+
+/* Fill the space below the sticky top bar and vertically centre the card, so a
+   short page (a form, a one-line message) sits in the optical middle rather
+   than clinging to the top. Reuses the hero gradient for a homepage feel. */
+.re-shell {
+  min-height: calc(100dvh - 61px);
+  display: flex;
+  align-items: center;
+  padding: clamp(2rem, 6vw, 4.5rem) 0;
+}
+
+.re-shell .wrap {
+  width: 100%;
+}
+
+/* The content card — same material as the site's goal/people cards. */
+.panel {
+  max-width: 34rem;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.panel h1 {
+  font-size: clamp(1.4rem, 3.2vw, 1.95rem);
+  margin: 0 0 .75rem;
+}
+
+.panel p {
+  color: var(--ink-soft);
+  max-width: 46ch;
+  margin: 0 auto 1rem;
+}
+
+.panel p:last-child {
+  margin-bottom: 0;
+}
+
+/* Compact wordmark above the landing form. Two files so the black-text light
+   logo can swap for the cream-text dark logo — same approach as the top bar. */
+.wordmark {
+  width: min(72vw, 320px);
+  height: auto;
+  margin: 0 auto 1.5rem;
+  display: block;
+}
+
+.wordmark-dark {
+  display: none;
+}
+
+[data-theme="dark"] .wordmark-light {
+  display: none;
+}
+
+[data-theme="dark"] .wordmark-dark {
+  display: block;
+}
+
+/* ---- Campaign-name form ------------------------------------------------- */
+.name-form {
+  display: flex;
+  gap: .6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 .75rem;
+}
+
+.name-form .slug-field {
+  display: inline-flex;
+  align-items: center;
+  gap: .1rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 .9rem;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.name-form .slug-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.name-form .slug-prefix {
+  color: var(--ink-faint);
+  font-size: .98rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.name-form input[type="text"] {
+  font: inherit;
+  font-size: 1rem;
+  padding: .7rem .1rem;
+  min-width: 11rem;
+  flex: 1;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.name-form input[type="text"]::placeholder {
+  color: var(--ink-faint);
+}
+
+/* The submit button reuses .btn / .btn-primary from styles.css. */
+
+/* ---- Notices ------------------------------------------------------------ */
+.notice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .75rem 1rem;
+  margin: 0 auto 1.25rem;
+  max-width: 46ch;
+  text-align: left;
+}
+
+.notice-error {
+  color: #a51d2d;
+  background: rgba(165, 29, 45, .07);
+  border-color: rgba(165, 29, 45, .28);
+}
+
+[data-theme="dark"] .notice-error {
+  color: #ff9aa4;
+  background: rgba(255, 120, 130, .1);
+  border-color: rgba(255, 120, 130, .32);
+}
+
+/* ---- Bits --------------------------------------------------------------- */
+.hint {
+  color: var(--ink-faint);
+  font-size: .9rem;
+}
+
+/* A slug rendered inline, e.g. letsenco.de/my-campaign. */
+.slug {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .92em;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .08em .4em;
+}
+
+.actions {
+  display: flex;
+  gap: .6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 .75rem;
+}
