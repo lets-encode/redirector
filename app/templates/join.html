@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}“{{ name }}” already exists — Let's Encode!{% endblock %}
+{% block body %}
+<h1>“{{ name }}” is already a campaign</h1>
+<p>Someone has already started a campaign with this name.
+You can join it as a contributor instead, or pick another name for your own campaign.</p>
+<p>
+  <a class="button" href="{{ join_url }}">Join this campaign</a>
+</p>
+<p class="muted">
+  <a href="/{{ name }}">Just visit the campaign</a> ·
+  <a href="/">Pick another name</a>
+</p>
+{% endblock %}

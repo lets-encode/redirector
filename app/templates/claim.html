@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Claim “{{ name }}” — Let's Encode!{% endblock %}
+{% block body %}
+<h1>There's no campaign called “{{ name }}” yet</h1>
+<p>Would you like to start one? It will live at <code>letsenco.de/{{ name }}</code>.</p>
+<form method="post" action="/{{ name }}/claim">
+  <button type="submit">Start “{{ name }}”</button>
+</form>
+<p class="muted"><a href="/">Or pick a different name.</a></p>
+{% endblock %}

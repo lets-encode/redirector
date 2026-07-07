@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Let's Encode!</h1>
+<p>Start a new encoding campaign. Pick a name for it — the campaign will live at
+<code>letsenco.de/&lt;your-name&gt;</code>.</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/register">
+  <input type="text" name="name" value="{{ name or '' }}" required
+         minlength="3" maxlength="40" autofocus
+         placeholder="my-campaign-name" aria-label="Campaign name">
+  <button type="submit">Create campaign</button>
+</form>
+<p class="muted">3&ndash;40 characters: lowercase letters, digits, and single internal hyphens.</p>
+{% endblock %}
