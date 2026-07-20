@@ -14,11 +14,14 @@ the `name → campaign_id` mapping and the redirect/branch logic around it.
 
 ## Architecture rationale
 
-* **Python + FastAPI, server-rendered Jinja templates.** The pages render and
-  work fully without JavaScript; the only script is a small progressive
-  enhancement — the light/dark theme toggle — carried over from the Let's
-  Encode! site so these pages match its look (shared `styles.css`, logo, and
-  favicons are served from `app/static/` under `/assets/`). Four direct
+* **Python + FastAPI, server-rendered Jinja templates.** Every page renders
+  server-side. The one action that needs JavaScript is the landing page's
+  *Create campaign* button, which probes `GET /<name>` and forwards to the
+  campaign app (see [How the flows work](#how-the-flows-work)); `POST /register`
+  remains as a scriptless registration API. The other script is a small
+  progressive enhancement — the light/dark theme toggle — carried over from the
+  Let's Encode! site so these pages match its look (shared `styles.css`, logo,
+  and favicons are served from `app/static/` under `/assets/`). Four direct
   dependencies (`fastapi`, `uvicorn`, `jinja2`, `python-multipart`); the data
   layer is stdlib `sqlite3`.
 * **SQLite, file-backed, WAL mode.** One table, a handful of writes per day,
@@ -30,19 +33,52 @@ the `name → campaign_id` mapping and the redirect/branch logic around it.
 
 | Request | Situation | Result |
 |---|---|---|
-| `GET /` | — | landing page with the name form |
-| `POST /register` (landing form) | name free | mint campaign ID, store mapping, `303` to `${CAMPAIGN_APP_BASE}/c/<id>/new` |
-| `POST /register` | name occupied (any status) | `409`, re-render form: *“already taken — choose another name”* |
+| `GET /` | — | `200` landing page; *Create campaign* probes `GET /<name>` client-side (see below) |
+| `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/c?slug=<name>` |
 | `GET /<name>` | active | `302` to `${CAMPAIGN_APP_BASE}/c/<id>` (or the admin-set URL for reserved names) |
-| `GET /<name>` | free | *“no campaign called this yet — start one?”* claim page |
-| `GET /<name>` | tombstoned | `410` Gone page |
-| `POST /<name>/claim` (claim page) | name free | register + `303` to the creation route, as above |
+| `GET /<name>` | reserved | `403` |
+| `GET /<name>` | malformed / percent-encoded | `400` |
+| `GET /<name>` | tombstoned | `410` blocked page |
+| `POST /<name>/claim` (from the campaign app) | name free | mint campaign ID, store mapping, `303` to `${CAMPAIGN_APP_BASE}/c/<id>/new` |
 | `POST /<name>/claim` | name active | `409` **interstitial**: *“already a campaign — join as a contributor?”* linking to `${CAMPAIGN_APP_BASE}/c/<id>/join` |
+| `POST /<name>/claim` | name tombstoned | `410` blocked page |
+| `POST /<name>/claim` | reserved / malformed | `404` |
+| `POST /register` | name free | mint campaign ID, store mapping, `303` to `${CAMPAIGN_APP_BASE}/c/<id>/new` |
+| `POST /register` | name occupied (any status) | `409`, re-render form: *“already taken — choose another name”* |
+
+The `GET /<name>` status codes are deliberately distinct so the landing page's
+probe can tell the states apart without reading a cross-origin body — only a
+`404` means "free, go ahead". `POST /register` is the original registration API;
+the website no longer uses it (it now goes through the two-step create below),
+but it remains a valid endpoint.
+
+### Two-step create (website ↔ campaign app)
+
+The website never registers a name on the first click. *Create campaign* on the
+landing page (and *Start* on the direct-visit claim page) both:
+
+1. **probe `GET /<name>`** — only `404` (free) proceeds; `302`/`403`/`400`/`410`
+   show an inline message and stop;
+2. **forward the browser** to `${CAMPAIGN_APP_BASE}/c?slug=<name>`.
+
+**Campaign-app contract.** That "start a new campaign" page lives in the
+campaign app, not here. It must:
+
+* read the proposed name from the **`slug` query parameter** and prefill it,
+  keeping it editable — any further validation there is the campaign app's
+  concern, not this service's;
+* when the user confirms, call **`POST https://letsenco.de/<name>/claim`** (with
+  the possibly-edited name) — the only call that actually creates the redirect
+  here — and handle its responses: `303` (created; `Location` is the
+  `/c/<id>/new` route), `409` (name taken since the probe — active names carry a
+  join link, reserved names do not), `410` (name blocked), `404` (name reserved
+  or malformed).
 
 * **Campaign-app routes** are assumed to be `/c/<id>` (page), `/c/<id>/new`
-  (creation/landing after registering), `/c/<id>/join` (contributor join).
-  They are constants at the top of `app/config.py` — adjust there if the
-  campaign app's contract differs.
+  (creation/landing after claiming), `/c/<id>/join` (contributor join), and
+  `/c?slug=<name>` (start a new campaign, name prefilled). They are constants at
+  the top of `app/config.py` — adjust there if the campaign app's contract
+  differs.
 * **Campaign IDs** are UUIDv4 — opaque, unguessable, no coordination needed.
 * **Deleting is always tombstoning.** There is no hard delete; the row stays,
   keeping the name occupied, with `notes` recording why.
@@ -59,6 +95,17 @@ no leading/trailing/double hyphens, no percent-encoding, plus:
 ## Admin
 
 Two operations, JSON over `/admin/*`:
+
+| Request | Situation | Result |
+|---|---|---|
+| `GET /admin/slugs` | authorised | `200` JSON array of all rows |
+| `POST /admin/slugs` | name free, valid URL | `201` reserved with the admin-set destination |
+| `POST /admin/slugs` | bad name or non-http(s) URL | `422` |
+| `POST /admin/slugs` | name already occupied | `409` |
+| `DELETE /admin/slugs/<name>` | name exists | `200` tombstoned (row kept, name stays occupied) |
+| `DELETE /admin/slugs/<name>` | name unknown | `404` |
+| any `/admin/*` | missing/invalid token | `401` |
+| any `/admin/*` | `ADMIN_TOKEN` unset | `503` (fail closed) |
 
 ```bash
 # Reserve a name for an arbitrary URL (the one admin-supplied-destination case)

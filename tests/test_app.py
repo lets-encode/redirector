@@ -38,20 +38,27 @@ def test_register_then_resolve(client):
 
 
 def test_claim_free_name_via_direct_url(client):
-    # GET on a free name offers a claim form rather than redirecting.
+    # GET on a free name offers a claim page that forwards to the campaign app
+    # (name still editable there) rather than registering on the spot.
     r = client.get("/fresh-name")
     assert r.status_code == 404
     assert "no campaign called" in r.text
+    assert f"{BASE}/c?slug=fresh-name" in r.text
+    assert "/fresh-name/claim" not in r.text  # the page no longer claims directly
 
+    # The claim endpoint itself is unchanged and still creates the redirect.
     r = client.post("/fresh-name/claim")
     assert r.status_code == 303
     assert r.headers["location"].startswith(f"{BASE}/c/")
 
 
-def test_landing_page_has_form(client):
+def test_landing_page_probes_and_forwards(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert '<form method="post" action="/register"' in r.text
+    # The website drives the flow client-side; it no longer posts to /register.
+    assert 'action="/register"' not in r.text
+    assert 'id="create-form"' in r.text
+    assert f'data-campaign-base="{BASE}"' in r.text
 
 
 # ------------------------------------------------------- validation at HTTP
@@ -74,7 +81,40 @@ def test_percent_encoded_slug_rejected(client):
     register(client, "my-campaign")
     # %2D decodes to '-', so the decoded path would exist; reject anyway.
     r = client.get("/my%2Dcampaign")
+    assert r.status_code == 400
+
+
+# ------------------------------------------------- GET /{name} probe states
+
+def test_get_free_name_is_404(client):
+    r = client.get("/totally-free")
     assert r.status_code == 404
+
+
+@pytest.mark.parametrize("name", ["ab", "Nope", "-abc", "abc-", "ab--cd", "my_name"])
+def test_get_malformed_name_is_400(client, name):
+    assert client.get(f"/{name}").status_code == 400
+
+
+@pytest.mark.parametrize("name", ["api", "admin", "static", "assets", "register"])
+def test_get_reserved_name_is_403(client, name):
+    r = client.get(f"/{name}")
+    assert r.status_code == 403
+    assert "Start" not in r.text  # never the claim offer
+
+
+def test_get_live_name_redirects(client):
+    register(client, "live-name")
+    r = client.get("/live-name")
+    assert r.status_code == 302
+
+
+def test_get_tombstoned_name_is_410_and_blocked(client):
+    register(client, "bad-name")
+    client.request("DELETE", "/admin/slugs/bad-name", headers=AUTH)
+    r = client.get("/bad-name")
+    assert r.status_code == 410
+    assert "blocked" in r.text.lower()
 
 
 # ------------------------------------------------------- collision branches
@@ -185,7 +225,7 @@ def test_admin_list(client):
 def test_reserved_own_routes_never_claimable(client):
     assert client.get("/robots.txt").status_code == 200
     assert client.get("/healthz").status_code == 200
-    # a reserved word that is not a live route gets a plain 404, not a claim offer
+    # a reserved word that is not a live route is 403 (forbidden), not a claim offer
     r = client.get("/api")
-    assert r.status_code == 404
+    assert r.status_code == 403
     assert "Start" not in r.text

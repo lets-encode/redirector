@@ -4,11 +4,21 @@ Owns exactly one thing: the mapping from user-chosen campaign names under
 letsenco.de/ to system-generated campaign IDs in the (separate) campaign app.
 No accounts, no campaign content, no analytics — see README.md.
 
+The landing page no longer registers on submit. "Create campaign" now probes
+GET /{name} over AJAX and, when the name is free, forwards the browser to the
+campaign app's "start a new campaign" page (${CAMPAIGN_APP_BASE}/c?slug=<name>),
+where the name stays editable. The slug is only claimed later, when that app
+calls POST /{name}/claim. So GET /{name} uses distinct status codes the probe
+can tell apart (free vs reserved vs malformed); the two POST endpoints below are
+unchanged.
+
 Route map (public):
-    GET  /                → landing page with the name form
-    POST /register        → landing-page flow; collision = "choose another name"
-    GET  /{name}          → active slug: 302 to campaign app (or admin-set URL)
-                            tombstoned: 410 · free name: "claim this name?" page
+    GET  /                → landing page; JS probes GET /{name}, forwards if free
+    POST /register        → still-valid registration API; unused by the website
+    GET  /{name}          → live slug: 302 to campaign app (or admin-set URL)
+                            free name: 404 + "claim this name?" page
+                            reserved name: 403 · malformed name: 400
+                            tombstoned (blocked): 410
     POST /{name}/claim    → direct-URL flow; collision = join-campaign interstitial
 
 Route map (admin — see README for the auth assumption):
@@ -72,31 +82,36 @@ def create_app(settings: Settings) -> FastAPI:
 
     # ---------------------------------------------------------------- public
 
+    def _render_landing(request: Request, *, status_code: int = 200, **context):
+        """Render the landing page. The campaign app's base is always injected so
+        the page's JS can build the forward URL (${base}/c?slug=<name>)."""
+        context.setdefault("campaign_app_base", settings.campaign_app_base)
+        return templates.TemplateResponse(
+            request, "landing.html", context, status_code=status_code
+        )
+
     @app.get("/", response_class=HTMLResponse)
     def landing(request: Request):
-        return templates.TemplateResponse(request, "landing.html")
+        return _render_landing(request)
 
     @app.post("/register", response_class=HTMLResponse)
     def register(request: Request, name: str = Form("")):
-        """Landing-page flow: on collision, ask the user to choose another name."""
+        """Registration API (unused by the website, which now probes GET /{name}
+        and forwards to the campaign app). On collision: choose-another-name."""
         name = name.strip()
         error = validation.registration_error(name)
         if error is None and store.get(name) is not None:
             error = f"“{name}” is already taken — please choose another name."
         if error is not None:
-            return templates.TemplateResponse(
-                request, "landing.html",
-                {"error": error, "name": name}, status_code=409,
-            )
+            return _render_landing(request, error=error, name=name, status_code=409)
         campaign_id = _mint_campaign_id()
         try:
             store.create_active(name, campaign_id)
         except SlugExists:  # lost a race since the SELECT above
-            return templates.TemplateResponse(
-                request, "landing.html",
-                {"error": f"“{name}” is already taken — please choose another name.",
-                 "name": name},
-                status_code=409,
+            return _render_landing(
+                request,
+                error=f"“{name}” is already taken — please choose another name.",
+                name=name, status_code=409,
             )
         return RedirectResponse(settings.campaign_create_url(campaign_id), status_code=303)
 
@@ -128,11 +143,10 @@ def create_app(settings: Settings) -> FastAPI:
                 request, "gone.html", {"name": name}, status_code=410
             )
         # reserved: occupied, but there is no campaign to join
-        return templates.TemplateResponse(
-            request, "landing.html",
-            {"error": f"“{name}” is not available — please choose another name.",
-             "name": name},
-            status_code=409,
+        return _render_landing(
+            request,
+            error=f"“{name}” is not available — please choose another name.",
+            name=name, status_code=409,
         )
 
     @app.get("/robots.txt", response_class=PlainTextResponse)
@@ -149,16 +163,20 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/{name}", response_class=HTMLResponse)
     def resolve(request: Request, name: str):
-        """Resolve a slug: 302 for live ones, 410 for tombstones, and a
-        'claim this name?' offer when the name is still free."""
+        """Resolve a slug. Distinct status codes so the landing page's probe can
+        tell the states apart: 302 live, 404 free (claimable), 403 reserved,
+        400 malformed, 410 tombstoned (blocked). Only 404 means "forward to the
+        campaign app to start this name"."""
         if _path_is_percent_encoded(request) or validation.syntax_error(name):
-            raise HTTPException(status_code=404)
+            raise HTTPException(status_code=400, detail=validation.ERR_SYNTAX)
         row = store.get(name)
         if row is None:
-            if validation.registration_error(name):
-                raise HTTPException(status_code=404)  # reserved: never claimable
+            if validation.registration_error(name):  # syntax already passed → reserved
+                raise HTTPException(status_code=403, detail=validation.ERR_RESERVED)
             return templates.TemplateResponse(
-                request, "claim.html", {"name": name}, status_code=404
+                request, "claim.html",
+                {"name": name, "campaign_start_url": settings.campaign_start_url(name)},
+                status_code=404,
             )
         if row["status"] == "tombstoned":
             return templates.TemplateResponse(

@@ -6,11 +6,13 @@
   <h1>Start an encoding campaign</h1>
   <p>Pick a name for your campaign — it will live at
      <span class="slug">letsenco.de/&lt;your-name&gt;</span>.</p>
+  <p class="notice notice-error" id="probe-error" role="alert" hidden></p>
   {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
-  <form method="post" action="/register" class="name-form">
+  <noscript><p class="notice notice-error">Creating a campaign needs JavaScript enabled.</p></noscript>
+  <form id="create-form" class="name-form" data-campaign-base="{{ campaign_app_base or '' }}">
     <span class="slug-field">
       <span class="slug-prefix">letsenco.de/</span>
-      <input type="text" name="name" value="{{ name or '' }}" required
+      <input type="text" name="name" id="slug-input" value="{{ name or '' }}" required
              minlength="3" maxlength="40" autofocus autocomplete="off" spellcheck="false"
              placeholder="my-campaign-name" aria-label="Campaign name">
     </span>
@@ -18,4 +20,66 @@
   </form>
   <p class="hint">3&ndash;40 characters: lowercase letters, digits, and single internal hyphens.</p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // "Create campaign" does not register the name here. It probes GET /<name>
+  // and, only if the name is free, forwards to the campaign app's "start a new
+  // campaign" page — where the name is prefilled but still editable, and the
+  // actual claim (POST /<name>/claim) happens. GET /<name> uses distinct status
+  // codes so we can tell the states apart without reading a cross-origin body.
+  (function () {
+    var form = document.getElementById("create-form");
+    if (!form) return;
+    var input = document.getElementById("slug-input");
+    var errBox = document.getElementById("probe-error");
+    var submit = form.querySelector("button[type=submit]");
+    var base = form.dataset.campaignBase || "";
+
+    function showError(msg) {
+      errBox.textContent = msg;
+      errBox.hidden = false;
+      submit.disabled = false;
+      input.focus();
+      input.select();
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      errBox.hidden = true;
+      if (!form.reportValidity()) return; // native required / min / max length
+      var name = input.value.trim();
+      submit.disabled = true;
+      // encodeURIComponent leaves a valid slug untouched; anything needing
+      // encoding is malformed and the server answers 400 anyway.
+      fetch("/" + encodeURIComponent(name), {
+        method: "GET",
+        redirect: "manual", // a live slug's 302 must not be followed cross-origin
+        headers: { "Accept": "text/html" },
+        cache: "no-store",
+      }).then(function (res) {
+        if (res.type === "opaqueredirect") { // 302 → the name is a live campaign
+          showError("“" + name + "” is already taken — please choose another name.");
+          return;
+        }
+        if (res.status === 404) { // free → go start it in the campaign app
+          window.location.assign(base + "/c?slug=" + encodeURIComponent(name));
+          return; // leave the button disabled while the browser navigates away
+        }
+        if (res.status === 410) {
+          showError("“" + name + "” has been blocked and can't be used — please choose another name.");
+        } else if (res.status === 403) {
+          showError("That name is reserved and can't be used for a campaign.");
+        } else if (res.status === 400) {
+          showError("Names must be 3–40 characters: lowercase letters, digits, and single internal hyphens.");
+        } else {
+          showError("Something went wrong — please try again.");
+        }
+      }).catch(function () {
+        showError("Something went wrong — please try again.");
+      });
+    });
+  })();
+</script>
 {% endblock %}

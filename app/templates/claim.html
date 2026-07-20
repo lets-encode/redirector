@@ -6,9 +6,7 @@
   <p>Would you like to start one? It will live at
      <span class="slug">letsenco.de/{{ name }}</span>.</p>
   <div class="actions">
-    <form method="post" action="/{{ name }}/claim">
-      <button class="btn btn-primary" type="submit">Start “{{ name }}”</button>
-    </form>
+    <a class="btn btn-primary" href="{{ campaign_start_url }}">Start “{{ name }}”</a>
     <a class="btn btn-ghost" href="/">Pick a different name</a>
   </div>
 </div>

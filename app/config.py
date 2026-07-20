@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 # Names that can never be registered as campaign slugs because they are (or
 # may become) routes of this service itself, or well-known root paths.
@@ -40,6 +41,10 @@ RESERVED_NAMES: frozenset[str] = frozenset(
 CAMPAIGN_PAGE_PATH = "/c/{campaign_id}"
 CAMPAIGN_CREATE_PATH = "/c/{campaign_id}/new"
 CAMPAIGN_JOIN_PATH = "/c/{campaign_id}/join"
+# The "start a new campaign" page: the user-chosen name is passed as a query
+# param (?slug=<name>) and prefilled there, where it stays editable. The actual
+# claim only happens later, when the campaign app calls POST /<slug>/claim here.
+CAMPAIGN_START_PATH = "/c"
 
 
 @dataclass(frozen=True)
@@ -67,3 +72,6 @@ class Settings:
 
     def campaign_join_url(self, campaign_id: str) -> str:
         return self.campaign_app_base + CAMPAIGN_JOIN_PATH.format(campaign_id=campaign_id)
+
+    def campaign_start_url(self, slug: str) -> str:
+        return f"{self.campaign_app_base}{CAMPAIGN_START_PATH}?{urlencode({'slug': slug})}"
