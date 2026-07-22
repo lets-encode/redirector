@@ -5,12 +5,16 @@ system-generated campaign pages in the (separate) Let's Encode! campaign
 application.
 
 **This is not a URL shortener.** Destinations are never user-supplied: a
-registered name always points at a campaign ID this service minted itself, and
-redirects go only to `${CAMPAIGN_APP_BASE}`. The single exception is
-admin-reserved names, where a staff member explicitly chooses the target URL.
-There are no user accounts here, no campaign content, no contributor state —
-all of that lives in the campaign app. This service owns exactly one thing:
-the `name → campaign_id` mapping and the redirect/branch logic around it.
+registered name always resolves to a campaign page under `${CAMPAIGN_APP_BASE}`,
+and the stored value is the campaign's **forge + repo id** (supplied by the
+campaign app when it registers the name, after it has created the repo — the
+`forge` qualifies the id so ids from different forges never collide). The single
+exception is admin-reserved names, where a staff member explicitly chooses the
+target URL. There are no user accounts here, no campaign content, no contributor
+state — all of that lives in the campaign app. This service owns exactly one
+thing: the `name → (forge, repo_id)` mapping and the redirect logic around it.
+The repo id is stable across repo renames and transfers; the app resolves it to
+the repo's current owner/name in the background.
 
 ## Architecture rationale
 
@@ -34,52 +38,61 @@ the `name → campaign_id` mapping and the redirect/branch logic around it.
 | Request | Situation | Result |
 |---|---|---|
 | `GET /` | — | `200` landing page; *Create campaign* probes `GET /<name>` client-side (see below) |
-| `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/c?slug=<name>` |
-| `GET /<name>` | active | `302` to `${CAMPAIGN_APP_BASE}/c/<id>` (or the admin-set URL for reserved names) |
+| `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/?campaign=<name>` |
+| `GET /<name>` | active | `302` to `${CAMPAIGN_APP_BASE}/campaign/<name>` (or the admin-set URL for reserved names) |
 | `GET /<name>` | reserved | `403` |
 | `GET /<name>` | malformed / percent-encoded | `400` |
 | `GET /<name>` | tombstoned | `410` blocked page |
-| `POST /<name>/claim` (from the campaign app) | name free | mint campaign ID, store mapping, `303` to `${CAMPAIGN_APP_BASE}/c/<id>/new` |
-| `POST /<name>/claim` | name active | `409` **interstitial**: *“already a campaign — join as a contributor?”* linking to `${CAMPAIGN_APP_BASE}/c/<id>/join` |
-| `POST /<name>/claim` | name tombstoned | `410` blocked page |
-| `POST /<name>/claim` | reserved / malformed | `404` |
-| `POST /register` | name free | mint campaign ID, store mapping, `303` to `${CAMPAIGN_APP_BASE}/c/<id>/new` |
-| `POST /register` | name occupied (any status) | `409`, re-render form: *“already taken — choose another name”* |
+| `GET /api/slug/<name>` (from the campaign app) | any valid name | `200` JSON `{ name, status, forge, repo_id }` (`forge`/`repo_id` only when active); malformed → `400` |
+| `POST /register` (from the campaign app) | name free | store `name → (forge, repo_id)`, `201` JSON `{ name, status: "active", forge, repo_id }` |
+| `POST /register` | same name, same (forge, repo_id) | `200` (idempotent) |
+| `POST /register` | name occupied by a different repo | `409` |
+| `POST /register` | invalid / reserved name | `422` |
 
 The `GET /<name>` status codes are deliberately distinct so the landing page's
 probe can tell the states apart without reading a cross-origin body — only a
-`404` means "free, go ahead". `POST /register` is the original registration API;
-the website no longer uses it (it now goes through the two-step create below),
-but it remains a valid endpoint.
+`404` means "free, go ahead".
 
-### Two-step create (website ↔ campaign app)
+**Landing page (`GET /`)** checks availability **live as the user types**
+(debounced `GET /<name>` probes): a free name enables *Create campaign*, an
+active one shows a "Go to this campaign →" link, and reserved/blocked/malformed
+names show an inline reason. **Direct visits** to `letsenco.de/<name>` need no
+UI: a free name's `404` page auto-forwards to the campaign app's setup page (via
+a small script the fetch-probe never runs, so the status codes still work), an
+active name `302`-redirects to the campaign, and reserved/malformed/blocked
+render a friendly `403`/`400`/`410` page.
 
-The website never registers a name on the first click. *Create campaign* on the
-landing page (and *Start* on the direct-visit claim page) both:
+### Create flow (website ↔ campaign app)
+
+The name is registered only *after* the campaign app has created the GitHub repo,
+so the stored `repo_id` always exists. *Create campaign* on the landing page (and
+*Start* on the direct-visit claim page) both:
 
 1. **probe `GET /<name>`** — only `404` (free) proceeds; `302`/`403`/`400`/`410`
    show an inline message and stop;
-2. **forward the browser** to `${CAMPAIGN_APP_BASE}/c?slug=<name>`.
+2. **forward the browser** to `${CAMPAIGN_APP_BASE}/?campaign=<name>`.
 
-**Campaign-app contract.** That "start a new campaign" page lives in the
-campaign app, not here. It must:
+**Campaign-app contract.** The "start a new campaign" page lives in the campaign
+app, not here. It must:
 
-* read the proposed name from the **`slug` query parameter** and prefill it,
-  keeping it editable — any further validation there is the campaign app's
-  concern, not this service's;
-* when the user confirms, call **`POST https://letsenco.de/<name>/claim`** (with
-  the possibly-edited name) — the only call that actually creates the redirect
-  here — and handle its responses: `303` (created; `Location` is the
-  `/c/<id>/new` route), `409` (name taken since the probe — active names carry a
-  join link, reserved names do not), `410` (name blocked), `404` (name reserved
-  or malformed).
+* read the proposed name from the **`campaign` query parameter** and prefill it,
+  keeping it editable — its handle validation must match the slug rules below so
+  the created repo name is a valid slug;
+* after it creates the GitHub repo, call **`POST https://letsenco.de/register`**
+  with JSON `{ name, repo_id, forge }` and handle the responses: `201`/`200`
+  (registered), `409` (name taken by a different repo since the probe — offer
+  another name / the existing campaign), `422` (invalid or reserved name);
+* resolve a name for its own routing via **`GET /api/slug/<name>`** →
+  `(forge, repo_id)`, then reach the repo by id on that forge.
 
-* **Campaign-app routes** are assumed to be `/c/<id>` (page), `/c/<id>/new`
-  (creation/landing after claiming), `/c/<id>/join` (contributor join), and
-  `/c?slug=<name>` (start a new campaign, name prefilled). They are constants at
-  the top of `app/config.py` — adjust there if the campaign app's contract
-  differs.
-* **Campaign IDs** are UUIDv4 — opaque, unguessable, no coordination needed.
+* **Campaign-app routes** are `${CAMPAIGN_APP_BASE}/campaign/<name>` (the console)
+  and `${CAMPAIGN_APP_BASE}/?campaign=<name>` (start a campaign, name
+  prefilled). They are constants at the top of `app/config.py` — adjust there if
+  the campaign app's contract differs.
+* **Stored value** is the campaign's **forge + numeric repo id**, supplied by the
+  campaign app. The `forge` qualifies the id so ids from different forges (GitHub,
+  GitLab, …) never collide. It is stable across renames/transfers; the app
+  resolves it to the current owner/name on that forge.
 * **Deleting is always tombstoning.** There is no hard delete; the row stays,
   keeping the name occupied, with `notes` recording why.
 

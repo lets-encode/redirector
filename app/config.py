@@ -37,14 +37,16 @@ RESERVED_NAMES: frozenset[str] = frozenset(
 )
 
 # Routes in the campaign app (relative to CAMPAIGN_APP_BASE). These are an
-# agreed contract with the campaign app, not user-configurable surface.
-CAMPAIGN_PAGE_PATH = "/c/{campaign_id}"
-CAMPAIGN_CREATE_PATH = "/c/{campaign_id}/new"
-CAMPAIGN_JOIN_PATH = "/c/{campaign_id}/join"
+# agreed contract with the campaign app, not user-configurable surface. The
+# campaign name is kept in the app URL; the app resolves it to the repo's stable
+# numeric id (which this service stores) for everything in the background.
+CAMPAIGN_PAGE_PATH = "/campaign/{name}"
 # The "start a new campaign" page: the user-chosen name is passed as a query
-# param (?slug=<name>) and prefilled there, where it stays editable. The actual
-# claim only happens later, when the campaign app calls POST /<slug>/claim here.
-CAMPAIGN_START_PATH = "/c"
+# param (?campaign=<name>) and prefilled there, where it stays editable. The
+# name is only registered later, when the campaign app calls POST /register here
+# with the created repo's numeric id. It is the campaign app's home page, which
+# opens its create form prefilled when the query param is present.
+CAMPAIGN_START_PATH = "/"
 
 
 @dataclass(frozen=True)
@@ -64,14 +66,8 @@ class Settings:
             admin_token=os.environ.get("ADMIN_TOKEN") or None,
         )
 
-    def campaign_page_url(self, campaign_id: str) -> str:
-        return self.campaign_app_base + CAMPAIGN_PAGE_PATH.format(campaign_id=campaign_id)
+    def campaign_page_url(self, name: str) -> str:
+        return self.campaign_app_base + CAMPAIGN_PAGE_PATH.format(name=name)
 
-    def campaign_create_url(self, campaign_id: str) -> str:
-        return self.campaign_app_base + CAMPAIGN_CREATE_PATH.format(campaign_id=campaign_id)
-
-    def campaign_join_url(self, campaign_id: str) -> str:
-        return self.campaign_app_base + CAMPAIGN_JOIN_PATH.format(campaign_id=campaign_id)
-
-    def campaign_start_url(self, slug: str) -> str:
-        return f"{self.campaign_app_base}{CAMPAIGN_START_PATH}?{urlencode({'slug': slug})}"
+    def campaign_start_url(self, name: str) -> str:
+        return f"{self.campaign_app_base}{CAMPAIGN_START_PATH}?{urlencode({'campaign': name})}"

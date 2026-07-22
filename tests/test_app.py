@@ -19,46 +19,87 @@ def client(tmp_path):
     return TestClient(create_app(settings), follow_redirects=False)
 
 
-def register(client, name):
-    return client.post("/register", data={"name": name})
+def register(client, name, repo_id=12345, forge="github"):
+    """The campaign app registers a name against a created repo's (forge, id)."""
+    return client.post("/register", json={"name": name, "repo_id": repo_id, "forge": forge})
 
 
 # ------------------------------------------------------------- happy path
 
 def test_register_then_resolve(client):
-    r = register(client, "lute-tablature")
-    assert r.status_code == 303
-    assert r.headers["location"].startswith(f"{BASE}/c/")
-    assert r.headers["location"].endswith("/new")
-    campaign_id = r.headers["location"].removeprefix(f"{BASE}/c/").removesuffix("/new")
+    r = register(client, "lute-tablature", repo_id=987)
+    assert r.status_code == 201
+    assert r.json() == {"name": "lute-tablature", "status": "active", "forge": "github", "repo_id": 987}
 
+    # The live name resolves to the campaign page — the NAME, not the id, is in
+    # the app URL; the app resolves the id in the background.
     r = client.get("/lute-tablature")
     assert r.status_code == 302
-    assert r.headers["location"] == f"{BASE}/c/{campaign_id}"
+    assert r.headers["location"] == f"{BASE}/campaign/lute-tablature"
 
 
-def test_claim_free_name_via_direct_url(client):
-    # GET on a free name offers a claim page that forwards to the campaign app
-    # (name still editable there) rather than registering on the spot.
+def test_register_is_idempotent_for_same_repo(client):
+    assert register(client, "same-name", repo_id=42).status_code == 201
+    # A retry with the same repo id succeeds (200), not a collision.
+    r = register(client, "same-name", repo_id=42)
+    assert r.status_code == 200
+    assert r.json()["repo_id"] == 42
+
+
+def test_register_collision_different_repo_is_409(client):
+    assert register(client, "hot-name", repo_id=1).status_code == 201
+    r = register(client, "hot-name", repo_id=2)
+    assert r.status_code == 409
+    assert "already taken" in r.json()["detail"]
+
+
+def test_free_name_page_forwards_to_create_form(client):
+    # A direct visit to a free name auto-forwards to the campaign app's create
+    # form (name still editable there) — the target is in data-forward, which the
+    # page's script follows. The 404 status still lets the landing probe see "free".
     r = client.get("/fresh-name")
     assert r.status_code == 404
     assert "no campaign called" in r.text
-    assert f"{BASE}/c?slug=fresh-name" in r.text
-    assert "/fresh-name/claim" not in r.text  # the page no longer claims directly
+    assert f'data-forward="{BASE}/?campaign=fresh-name"' in r.text
+    assert "/fresh-name/claim" not in r.text  # no browser-side claim endpoint
 
-    # The claim endpoint itself is unchanged and still creates the redirect.
-    r = client.post("/fresh-name/claim")
-    assert r.status_code == 303
-    assert r.headers["location"].startswith(f"{BASE}/c/")
+
+def test_malformed_name_page_is_friendly_400(client):
+    r = client.get("/Bad--Name")
+    assert r.status_code == 400
+    assert "3–40 characters" in r.text  # the friendly rule, not a JSON blob
+    assert "data-forward" not in r.text
 
 
 def test_landing_page_probes_and_forwards(client):
     r = client.get("/")
     assert r.status_code == 200
-    # The website drives the flow client-side; it no longer posts to /register.
+    # The website drives the flow client-side; it never posts to /register.
     assert 'action="/register"' not in r.text
     assert 'id="create-form"' in r.text
     assert f'data-campaign-base="{BASE}"' in r.text
+
+
+# ------------------------------------------------- api resolver for the app
+
+def test_api_slug_reports_states(client):
+    assert client.get("/api/slug/nope-yet").json() == {
+        "name": "nope-yet", "status": "free", "forge": None, "repo_id": None
+    }
+    register(client, "live-one", repo_id=555)
+    assert client.get("/api/slug/live-one").json() == {
+        "name": "live-one", "status": "active", "forge": "github", "repo_id": 555
+    }
+    assert client.get("/api/slug/admin").json()["status"] == "reserved"
+    assert client.get("/api/slug/Bad--Name").status_code == 400
+
+
+def test_register_same_id_different_forge_is_collision(client):
+    # The name is the identity; a second campaign can't take it even if only the
+    # forge differs. The forge qualifies repo_id so ids across forges never mix.
+    assert register(client, "shared-id", repo_id=7, forge="github").status_code == 201
+    r = register(client, "shared-id", repo_id=7, forge="gitlab")
+    assert r.status_code == 409
 
 
 # ------------------------------------------------------- validation at HTTP
@@ -66,15 +107,15 @@ def test_landing_page_probes_and_forwards(client):
 @pytest.mark.parametrize("name", ["ab", "Nope", "-abc", "abc-", "ab--cd", "my_name"])
 def test_register_rejects_invalid_names(client, name):
     r = register(client, name)
-    assert r.status_code == 409
-    assert "3-40 characters" in r.text
+    assert r.status_code == 422
+    assert "3-40 characters" in r.json()["detail"]
 
 
 @pytest.mark.parametrize("name", ["api", "admin", "static", "assets", "register"])
 def test_register_refuses_reserved_paths(client, name):
     r = register(client, name)
-    assert r.status_code == 409
-    assert "reserved" in r.text
+    assert r.status_code == 422
+    assert "reserved" in r.json()["detail"]
 
 
 def test_percent_encoded_slug_rejected(client):
@@ -100,7 +141,8 @@ def test_get_malformed_name_is_400(client, name):
 def test_get_reserved_name_is_403(client, name):
     r = client.get(f"/{name}")
     assert r.status_code == 403
-    assert "Start" not in r.text  # never the claim offer
+    assert "reserved" in r.text.lower()
+    assert "data-forward" not in r.text  # never the claim / auto-forward offer
 
 
 def test_get_live_name_redirects(client):
@@ -117,26 +159,6 @@ def test_get_tombstoned_name_is_410_and_blocked(client):
     assert "blocked" in r.text.lower()
 
 
-# ------------------------------------------------------- collision branches
-
-def test_landing_collision_says_choose_another(client):
-    register(client, "taken-name")
-    r = register(client, "taken-name")
-    assert r.status_code == 409
-    assert "choose another name" in r.text
-    assert "join" not in r.text.lower()  # landing flow never offers a join
-
-
-def test_direct_url_collision_offers_join(client):
-    r = register(client, "taken-name")
-    campaign_id = r.headers["location"].removeprefix(f"{BASE}/c/").removesuffix("/new")
-
-    r = client.post("/taken-name/claim")
-    assert r.status_code == 409
-    assert f"{BASE}/c/{campaign_id}/join" in r.text
-    assert "already a campaign" in r.text
-
-
 # ---------------------------------------------------------------- tombstones
 
 def test_tombstone_prevents_reregistration(client):
@@ -148,10 +170,9 @@ def test_tombstone_prevents_reregistration(client):
     r = client.get("/doomed-name")
     assert r.status_code == 410
 
-    r = register(client, "doomed-name")           # landing flow
+    # A tombstoned name stays occupied: re-registration collides.
+    r = register(client, "doomed-name", repo_id=999)
     assert r.status_code == 409
-    r = client.post("/doomed-name/claim")         # direct-URL flow
-    assert r.status_code == 410
 
 
 def test_tombstone_unknown_name_404(client):
@@ -171,9 +192,8 @@ def test_admin_reserve_and_resolve(client):
     assert r.status_code == 302
     assert r.headers["location"] == "https://mdw.ac.at/x"
 
-    # reserved names stay occupied for both public flows
+    # a reserved name stays occupied for registration
     assert register(client, "workshop").status_code == 409
-    assert client.post("/workshop/claim").status_code == 409
 
 
 def test_admin_reserve_validates_input(client):
@@ -211,13 +231,14 @@ def test_admin_disabled_without_token(tmp_path):
 
 
 def test_admin_list(client):
-    register(client, "one-name")
+    register(client, "one-name", repo_id=321)
     r = client.get("/admin/slugs", headers=AUTH)
     assert r.status_code == 200
     rows = r.json()
     assert len(rows) == 1
     assert rows[0]["name"] == "one-name"
     assert rows[0]["status"] == "active"
+    assert rows[0]["repo_id"] == 321
 
 
 # ----------------------------------------------------------------- own paths
@@ -228,4 +249,4 @@ def test_reserved_own_routes_never_claimable(client):
     # a reserved word that is not a live route is 403 (forbidden), not a claim offer
     r = client.get("/api")
     assert r.status_code == 403
-    assert "Start" not in r.text
+    assert "data-forward" not in r.text

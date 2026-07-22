@@ -5,7 +5,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY blocklist.txt .
 
 # SQLite lives on a volume so the slug registry survives redeploys.
 ENV DB_PATH=/data/slugs.db

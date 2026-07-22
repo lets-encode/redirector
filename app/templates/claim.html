@@ -1,13 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Claim “{{ name }}” — Let's Encode!{% endblock %}
+{% block title %}Start “{{ name }}” — Let's Encode!{% endblock %}
 {% block body %}
-<div class="panel">
+<div class="panel" data-forward="{{ campaign_start_url }}">
   <h1>There's no campaign called “{{ name }}” yet</h1>
-  <p>Would you like to start one? It will live at<br/>
-     <span class="slug">letsenco.de/{{ name }}</span></p>
+  <p>Taking you to the setup page to start one at<br/>
+     <span class="slug">letsenco.de/{{ name }}</span>…</p>
   <div class="actions">
-    <a class="btn btn-primary" href="{{ campaign_start_url }}">Start “{{ name }}”</a>
+    <a class="btn btn-primary" id="start-link" href="{{ campaign_start_url }}">Start “{{ name }}”</a>
     <a class="btn btn-ghost" href="/">Pick a different name</a>
   </div>
+  <noscript><p class="hint">JavaScript is off — use the “Start” button above.</p></noscript>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  // A free name reached by directly navigating to letsenco.de/<name> forwards
+  // straight to the campaign app's setup page. This runs only on a real browser
+  // visit — the landing page's fetch probe reads the 404 status and never
+  // executes this — so the free/active/… distinction the probe relies on holds.
+  (function () {
+    var el = document.querySelector("[data-forward]");
+    var url = el && el.getAttribute("data-forward");
+    if (url) window.location.replace(url);
+  })();
+</script>
 {% endblock %}

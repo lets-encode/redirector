@@ -6,7 +6,6 @@
   <h1>Start an encoding campaign</h1>
   <p>Pick a name for your campaign — it will live at<br/>
      <span class="slug">letsenco.de/&lt;your-campaign-name&gt;</span></p>
-  <p class="notice notice-error" id="probe-error" role="alert" hidden></p>
   {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
   <noscript><p class="notice notice-error">Creating a campaign needs JavaScript enabled.</p></noscript>
   <form id="create-form" class="name-form" data-campaign-base="{{ campaign_app_base or '' }}">
@@ -14,72 +13,112 @@
       <span class="slug-prefix">letsenco.de/</span>
       <input type="text" name="name" id="slug-input" value="{{ name or '' }}" required
              minlength="3" maxlength="40" autofocus autocomplete="off" spellcheck="false"
-             placeholder="my-campaign-name" aria-label="Campaign name">
+             placeholder="my-campaign-name" aria-label="Campaign name"
+             aria-describedby="probe-msg">
     </span>
     <button class="btn btn-primary" type="submit">Create campaign</button>
   </form>
+  <p class="notice" id="probe-msg" role="status" aria-live="polite" hidden></p>
+  <p id="probe-go-wrap" hidden><a class="btn btn-ghost" id="probe-go" href="#">Go to this campaign →</a></p>
   <p class="hint">3&ndash;40 characters: lowercase letters, digits, and single internal hyphens.</p>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // "Create campaign" does not register the name here. It probes GET /<name>
-  // and, only if the name is free, forwards to the campaign app's "start a new
-  // campaign" page — where the name is prefilled but still editable, and the
-  // actual claim (POST /<name>/claim) happens. GET /<name> uses distinct status
-  // codes so we can tell the states apart without reading a cross-origin body.
+  // The name is never registered here. As the user types we probe GET /<name>
+  // (debounced) and report the name's state live; "Create campaign" is enabled
+  // only for a free name and forwards to the campaign app's create page (name
+  // prefilled, still editable), which registers it later once the repo exists.
+  // GET /<name> returns distinct status codes so we can tell the states apart
+  // without reading a cross-origin body (a live name is a 302 we must not follow).
   (function () {
     var form = document.getElementById("create-form");
     if (!form) return;
     var input = document.getElementById("slug-input");
-    var errBox = document.getElementById("probe-error");
+    var msg = document.getElementById("probe-msg");
+    var goWrap = document.getElementById("probe-go-wrap");
+    var go = document.getElementById("probe-go");
     var submit = form.querySelector("button[type=submit]");
     var base = form.dataset.campaignBase || "";
 
-    function showError(msg) {
-      errBox.textContent = msg;
-      errBox.hidden = false;
-      submit.disabled = false;
-      input.focus();
-      input.select();
+    // Mirror the server's slug rules for instant feedback before any request:
+    // 3–40 chars, lowercase/digits, single internal hyphens.
+    var SLUG_RE = /^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$/;
+    var isValidSlug = function (n) { return SLUG_RE.test(n) && n.indexOf("--") === -1; };
+
+    var state = "empty"; // empty | invalid | checking | free | taken | reserved | blocked | error
+    var seq = 0;         // discards responses from superseded keystrokes
+    var timer = null;
+
+    function render(name) {
+      go.href = "/" + encodeURIComponent(name);
+      goWrap.hidden = state !== "taken";
+      submit.disabled = state !== "free";
+      var cls = "notice", text = "";
+      if (state === "empty") { msg.hidden = true; return; }
+      else if (state === "checking") { text = "Checking availability…"; }
+      else if (state === "free") { cls += " notice-ok"; text = "“" + name + "” is available."; }
+      else if (state === "taken") { cls += " notice-warn"; text = "“" + name + "” is already a campaign."; }
+      else if (state === "reserved") { cls += " notice-error"; text = "“" + name + "” is reserved and can't be used."; }
+      else if (state === "blocked") { cls += " notice-error"; text = "“" + name + "” has been blocked and can't be used."; }
+      else if (state === "invalid") { cls += " notice-error"; text = "Use 3–40 characters: lowercase letters, digits, and single internal hyphens."; }
+      else { cls += " notice-error"; text = "Couldn't check availability — try again."; }
+      msg.className = cls;
+      msg.textContent = text;
+      msg.hidden = false;
     }
 
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      errBox.hidden = true;
-      if (!form.reportValidity()) return; // native required / min / max length
-      var name = input.value.trim();
-      submit.disabled = true;
-      // encodeURIComponent leaves a valid slug untouched; anything needing
-      // encoding is malformed and the server answers 400 anyway.
+    function probe(name) {
+      var mine = ++seq;
+      state = "checking";
+      render(name);
       fetch("/" + encodeURIComponent(name), {
         method: "GET",
         redirect: "manual", // a live slug's 302 must not be followed cross-origin
         headers: { "Accept": "text/html" },
         cache: "no-store",
       }).then(function (res) {
-        if (res.type === "opaqueredirect") { // 302 → the name is a live campaign
-          showError("“" + name + "” is already taken — please choose another name.");
-          return;
-        }
-        if (res.status === 404) { // free → go start it in the campaign app
-          window.location.assign(base + "/c?slug=" + encodeURIComponent(name));
-          return; // leave the button disabled while the browser navigates away
-        }
-        if (res.status === 410) {
-          showError("“" + name + "” has been blocked and can't be used — please choose another name.");
-        } else if (res.status === 403) {
-          showError("That name is reserved and can't be used for a campaign.");
-        } else if (res.status === 400) {
-          showError("Names must be 3–40 characters: lowercase letters, digits, and single internal hyphens.");
-        } else {
-          showError("Something went wrong — please try again.");
-        }
+        if (mine !== seq) return; // a later keystroke already superseded this
+        if (res.type === "opaqueredirect" || res.status === 302) state = "taken";
+        else if (res.status === 404) state = "free";
+        else if (res.status === 403) state = "reserved";
+        else if (res.status === 410) state = "blocked";
+        else if (res.status === 400) state = "invalid";
+        else state = "error";
+        render(name);
       }).catch(function () {
-        showError("Something went wrong — please try again.");
+        if (mine !== seq) return;
+        state = "error";
+        render(name);
       });
+    }
+
+    function onInput() {
+      if (timer) clearTimeout(timer);
+      var name = input.value.trim();
+      seq++; // invalidate any in-flight probe
+      if (!name) { state = "empty"; render(name); return; }
+      if (!isValidSlug(name)) { state = "invalid"; render(name); return; }
+      state = "checking";
+      render(name);
+      timer = setTimeout(function () { probe(name); }, 300);
+    }
+
+    input.addEventListener("input", onInput);
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var name = input.value.trim();
+      // Only a confirmed-free name can be submitted (the button is disabled
+      // otherwise); forward to the campaign app to start it.
+      if (state === "free") window.location.assign(base + "/?campaign=" + encodeURIComponent(name));
     });
+
+    // A prefilled name checks immediately; otherwise set the empty state (which
+    // disables the submit button until a free name is confirmed).
+    if (input.value.trim()) onInput();
+    else render("");
   })();
 </script>
 {% endblock %}

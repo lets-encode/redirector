@@ -16,7 +16,8 @@ from typing import Iterator
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS slugs (
     name            TEXT PRIMARY KEY,
-    campaign_id     TEXT,                -- NULL for admin-reserved rows
+    forge           TEXT,                -- which forge repo_id belongs to (e.g. 'github'); NULL for admin-reserved rows
+    repo_id         INTEGER,             -- forge-native numeric repo id; NULL for admin-reserved rows
     destination_url TEXT,                -- set only for admin-reserved custom targets
     status          TEXT NOT NULL CHECK (status IN ('active', 'reserved', 'tombstoned')),
     created_at      TEXT NOT NULL,
@@ -57,15 +58,17 @@ class Store:
         with self._connect() as conn:
             return conn.execute("SELECT * FROM slugs WHERE name = ?", (name,)).fetchone()
 
-    def create_active(self, name: str, campaign_id: str) -> None:
-        """Register a campaign slug. Raises SlugExists on any collision,
-        including races: the PRIMARY KEY is the arbiter, not a prior SELECT."""
+    def create_active(self, name: str, forge: str, repo_id: int) -> None:
+        """Register a campaign slug against its (forge, repo_id) — the forge
+        qualifies the id so a GitHub id never collides with a GitLab one. Raises
+        SlugExists on any collision, including races: the PRIMARY KEY is the
+        arbiter, not a prior SELECT."""
         try:
             with self._connect() as conn:
                 conn.execute(
-                    "INSERT INTO slugs (name, campaign_id, status, created_at)"
-                    " VALUES (?, ?, 'active', ?)",
-                    (name, campaign_id, self._now()),
+                    "INSERT INTO slugs (name, forge, repo_id, status, created_at)"
+                    " VALUES (?, ?, ?, 'active', ?)",
+                    (name, forge, repo_id, self._now()),
                 )
         except sqlite3.IntegrityError:
             raise SlugExists(name) from None
