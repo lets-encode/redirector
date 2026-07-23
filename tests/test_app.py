@@ -60,7 +60,7 @@ def test_free_name_page_forwards_to_create_form(client):
     r = client.get("/fresh-name")
     assert r.status_code == 404
     assert "no campaign called" in r.text
-    assert f'data-forward="{BASE}/?campaign=fresh-name"' in r.text
+    assert f'data-forward="{BASE}/c?slug=fresh-name"' in r.text
     assert "/fresh-name/claim" not in r.text  # no browser-side claim endpoint
 
 

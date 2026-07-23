@@ -9,7 +9,7 @@ no analytics — see README.md.
 
 The landing page does not register on submit. "Create campaign" probes
 GET /{name} over AJAX and, when the name is free, forwards the browser to the
-campaign app's "start a new campaign" page (${CAMPAIGN_APP_BASE}/?campaign=<name>),
+campaign app's "start a new campaign" page (${CAMPAIGN_APP_BASE}/c?slug=<name>),
 where the name stays editable. The name is registered only later — after the
 campaign app has created the GitHub repo — when it calls POST /register with the
 name and the new repo's numeric id. GET /{name} uses distinct status codes the
@@ -93,7 +93,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     def _render_landing(request: Request, *, status_code: int = 200, **context):
         """Render the landing page. The campaign app's base is always injected so
-        the page's JS can build the forward URL (${base}/?campaign=<name>)."""
+        the page's JS can build the forward URL (${base}/c?slug=<name>)."""
         context.setdefault("campaign_app_base", settings.campaign_app_base)
         return templates.TemplateResponse(
             request, "landing.html", context, status_code=status_code

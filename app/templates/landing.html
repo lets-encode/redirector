@@ -112,7 +112,7 @@
       var name = input.value.trim();
       // Only a confirmed-free name can be submitted (the button is disabled
       // otherwise); forward to the campaign app to start it.
-      if (state === "free") window.location.assign(base + "/?campaign=" + encodeURIComponent(name));
+      if (state === "free") window.location.assign(base + "/c?slug=" + encodeURIComponent(name));
     });
 
     // A prefilled name checks immediately; otherwise set the empty state (which

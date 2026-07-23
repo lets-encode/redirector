@@ -42,11 +42,11 @@ RESERVED_NAMES: frozenset[str] = frozenset(
 # numeric id (which this service stores) for everything in the background.
 CAMPAIGN_PAGE_PATH = "/campaign/{name}"
 # The "start a new campaign" page: the user-chosen name is passed as a query
-# param (?campaign=<name>) and prefilled there, where it stays editable. The
-# name is only registered later, when the campaign app calls POST /register here
-# with the created repo's numeric id. It is the campaign app's home page, which
-# opens its create form prefilled when the query param is present.
-CAMPAIGN_START_PATH = "/"
+# param (?slug=<name>) and prefilled there, where it stays editable. The name is
+# only registered later, when the campaign app calls POST /register here with
+# the created repo's numeric id. The campaign app serves this at /c and opens
+# its create form prefilled when the query param is present.
+CAMPAIGN_START_PATH = "/c"
 
 
 @dataclass(frozen=True)
@@ -70,4 +70,4 @@ class Settings:
         return self.campaign_app_base + CAMPAIGN_PAGE_PATH.format(name=name)
 
     def campaign_start_url(self, name: str) -> str:
-        return f"{self.campaign_app_base}{CAMPAIGN_START_PATH}?{urlencode({'campaign': name})}"
+        return f"{self.campaign_app_base}{CAMPAIGN_START_PATH}?{urlencode({'slug': name})}"
