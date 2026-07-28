@@ -118,7 +118,7 @@ def test_claimed_name_is_occupied_but_not_a_campaign(client):
     # No campaign to send anyone to yet, and not free either.
     r = client.get("/mid-setup")
     assert r.status_code == 409
-    assert "being set up" in r.text
+    assert "taken for now" in r.text
     assert "data-forward" not in r.text  # never offered for the taking
     assert client.get("/api/slug/mid-setup").json() == {
         "name": "mid-setup", "status": "pending", "forge": None, "repo_id": None

@@ -48,10 +48,13 @@ CAMPAIGN_PAGE_PATH = "/campaign/{name}"
 # its create form prefilled when the query param is present.
 CAMPAIGN_START_PATH = "/c"
 
-# How long a claimed name is held for the claim it was issued to before the name
-# is free for anyone else. It spans the campaign app's setup, from the name being
-# chosen to the repo being created, so it allows for a slow upload in between.
-CLAIM_TTL_MINUTES = 30
+# How long a claimed name is held before anyone else may take it. It spans a
+# whole campaign setup — from the name being chosen to the finished campaign
+# being registered — including setups picked up again after a break, so it is
+# generous. Presenting the claim's own token still works after this has passed,
+# as long as nobody else has taken the name; a setup that is given up releases
+# its name at once rather than waiting this out.
+CLAIM_TTL_MINUTES = 24 * 60
 
 
 @dataclass(frozen=True)

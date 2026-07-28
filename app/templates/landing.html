@@ -60,7 +60,7 @@
       else if (state === "checking") { text = "Checking availability…"; }
       else if (state === "free") { cls += " notice-ok"; text = "“" + name + "” is available."; }
       else if (state === "taken") { cls += " notice-warn"; text = "“" + name + "” is already a campaign."; }
-      else if (state === "claimed") { cls += " notice-warn"; text = "“" + name + "” is being set up by someone right now."; }
+      else if (state === "claimed") { cls += " notice-warn"; text = "“" + name + "” is taken by a campaign being set up."; }
       else if (state === "reserved") { cls += " notice-error"; text = "“" + name + "” is reserved and can't be used."; }
       else if (state === "blocked") { cls += " notice-error"; text = "“" + name + "” has been blocked and can't be used."; }
       else if (state === "invalid") { cls += " notice-error"; text = "Use 3–40 characters: lowercase letters, digits, and single internal hyphens."; }

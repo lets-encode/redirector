@@ -13,20 +13,23 @@ campaign app's "start a new campaign" page (${CAMPAIGN_APP_BASE}/c?slug=<name>),
 where the name stays editable. GET /{name} uses distinct status codes the probe
 can tell apart (free vs claimed vs reserved vs malformed).
 
-A name is taken in two steps, because the repo id it is stored against does not
-exist until the campaign app has created the repo — and asking for the name only
-then would leave the whole setup exposed to losing it at the last moment:
+A name is taken in two steps, because a campaign's setup takes a while and the
+name has to be safe for the whole of it, while the repo id the name is stored
+against only exists once the campaign does:
 
     POST /claim     holds the name the moment the organiser picks it, against a
                     claim token, for CLAIM_TTL_MINUTES. No repo id needed.
-    POST /register  presents that token once the repo exists and turns the claim
-                    into the live campaign.
+    POST /register  presents that token when the campaign is finished, turning
+                    the claim into the live campaign.
 
-So a claim is a lease on a name. The lease running out does not revoke the
-token — it only lets someone else take the name — so a long setup loses the name
-only if somebody actually wanted it. A claim nobody promotes occupies nothing
-once it has run out; it is dropped on the next write and read as free before
-that, so no sweeper is needed.
+So the two statuses say exactly one thing each: `pending` is a setup in progress,
+`active` is a campaign that exists. Nothing in between is published — a setup
+that is never finished never becomes a campaign, and its name comes back.
+
+A claim is a lease. Running out does not revoke the token — it only lets someone
+else take the name — so a long setup loses the name only if somebody actually
+wanted it. A claim nobody promotes occupies nothing once it has run out; it is
+dropped on the next write and read as free before that, so no sweeper is needed.
 
 Route map (public):
     GET  /                → landing page; JS probes GET /{name}, forwards if free
@@ -142,9 +145,9 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.post("/claim", status_code=201)
     def claim(body: ClaimBody):
-        """Hold a name for the caller before it has a repo to register against,
-        so the rest of a campaign's setup cannot lose it. The returned token is
-        the right to activate the name later (POST /register) or to give it back
+        """Hold a name for the caller for the length of a campaign's setup, before
+        there is a campaign to register it against. The returned token is the
+        right to activate the name later (POST /register) or to give it back
         (DELETE /claim/{name}). Occupied name → 409, invalid name → 422."""
         name = body.name.strip()
         error = validation.registration_error(name)
@@ -178,11 +181,11 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.post("/register")
     def register(body: RegisterBody):
-        """Registration API the campaign app calls AFTER creating the repo,
-        passing the chosen name, the repo's numeric id, its forge (the forge
-        qualifies the id so different forges' ids never collide) and the token the
-        name was claimed under. Activating an own claim works even after the claim
-        has run out, as long as nobody else has taken the name since. Idempotent:
+        """Registration API the campaign app calls once the campaign exists,
+        passing the chosen name, its repo's numeric id, the forge (which qualifies
+        the id so different forges' ids never collide) and the token the name was
+        claimed under. Activating an own claim works even after the claim has run
+        out, as long as nobody else has taken the name since. Idempotent:
         a repeat with the same (forge, repo_id) succeeds (200). A different repo on
         an occupied name is a genuine collision (409). Invalid name → 422."""
         name = body.name.strip()
@@ -285,9 +288,9 @@ def create_app(settings: Settings) -> FastAPI:
             # yet, and the name is not free either.
             return templates.TemplateResponse(
                 request, "notice.html",
-                {"heading": "That name is being set up",
-                 "message": f"Someone is setting up a campaign called “{name}” right now. "
-                            "If it isn't finished, the name becomes free again later."},
+                {"heading": "That name is taken for now",
+                 "message": f"Someone is setting up a campaign called “{name}”. "
+                            "If they don't finish it, the name becomes free again."},
                 status_code=409,
             )
         destination = row["destination_url"] or settings.campaign_page_url(name)

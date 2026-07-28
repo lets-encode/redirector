@@ -40,7 +40,7 @@ the repo's current owner/name in the background.
 | `GET /` | — | `200` landing page; *Create campaign* probes `GET /<name>` client-side (see below) |
 | `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/c?slug=<name>` |
 | `GET /<name>` | active | `302` to `${CAMPAIGN_APP_BASE}/campaign/<name>` (or the admin-set URL for reserved names) |
-| `GET /<name>` | claimed by a setup in progress | `409` |
+| `GET /<name>` | claimed by a setup in progress | `409` (no campaign to send anyone to yet) |
 | `GET /<name>` | reserved | `403` |
 | `GET /<name>` | malformed / percent-encoded | `400` |
 | `GET /<name>` | tombstoned | `410` blocked page |
@@ -70,19 +70,27 @@ malformed/blocked render a friendly `409`/`403`/`400`/`410` page.
 
 ### Create flow (website ↔ campaign app)
 
-A name is taken in two steps, because the `repo_id` it is stored against does not
-exist until the campaign app has created the repo:
+A name is taken in two steps, because a campaign's setup takes a while and the
+name must be safe for the whole of it, while the `repo_id` the name is stored
+against only exists once the campaign does:
 
 * **`POST /claim`** holds the name from the moment the organiser picks it, against
   a claim token, for `CLAIM_TTL_MINUTES` (`app/config.py`). No repo id needed.
-* **`POST /register`** presents that token once the repo exists, turning the claim
-  into the live campaign.
+* **`POST /register`** presents that token when the setup is finished, turning the
+  claim into the live campaign.
 
-A claim is therefore a **lease on a name**. Running out does not revoke the token
-— it only lets someone else take the name — so a long setup loses its name only if
-somebody actually wanted it. A claim nobody promotes occupies nothing once it has
-run out: reads report the name free and the next write drops the row, so there is
-no sweeper.
+**The two statuses each say one thing.** `pending` is a setup in progress;
+`active` is a campaign that exists. A setup that is abandoned never becomes a
+campaign, so an unfinished name is never published as one and comes back to the
+pool. Note what this means for the campaign app: register at the *end* of setup,
+not when the repository is created — a repository is not a campaign.
+
+A claim is a **lease on a name**. Running out does not revoke the token — it only
+lets someone else take the name — so a long setup loses its name only if somebody
+actually wanted it. A claim nobody promotes occupies nothing once it has run out:
+reads report the name free and the next write drops the row, so there is no
+sweeper. A setup that is given up should `DELETE /claim/<name>` so the name is
+free at once rather than at the end of the lease.
 
 *Create campaign* on the landing page (and *Start* on the direct-visit claim page)
 both:
@@ -102,10 +110,11 @@ app, not here. It must:
   (occupied — ask for another name) and `422` (invalid or reserved). Call
   **`DELETE /claim/<name>`** with the token if the campaign is renamed before its
   repo exists, so the first name does not stay held;
-* after it creates the GitHub repo, call **`POST https://letsenco.de/register`**
-  with JSON `{ name, repo_id, forge, claim_token }` and handle the responses:
-  `201`/`200` (registered), `409` (the name went to a different repo — offer
-  another name / the existing campaign), `422` (invalid or reserved name);
+* once the campaign is actually set up — not when its repository is created —
+  call **`POST https://letsenco.de/register`** with JSON
+  `{ name, repo_id, forge, claim_token }` and handle the responses: `201`/`200`
+  (registered), `409` (the name went to a different repo — offer another name /
+  the existing campaign), `422` (invalid or reserved name);
 * resolve a name for its own routing via **`GET /api/slug/<name>`** →
   `(forge, repo_id)`, then reach the repo by id on that forge.
 
