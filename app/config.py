@@ -48,6 +48,11 @@ CAMPAIGN_PAGE_PATH = "/campaign/{name}"
 # its create form prefilled when the query param is present.
 CAMPAIGN_START_PATH = "/c"
 
+# How long a claimed name is held for the claim it was issued to before the name
+# is free for anyone else. It spans the campaign app's setup, from the name being
+# chosen to the repo being created, so it allows for a slow upload in between.
+CLAIM_TTL_MINUTES = 30
+
 
 @dataclass(frozen=True)
 class Settings:

@@ -47,7 +47,7 @@
     var SLUG_RE = /^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$/;
     var isValidSlug = function (n) { return SLUG_RE.test(n) && n.indexOf("--") === -1; };
 
-    var state = "empty"; // empty | invalid | checking | free | taken | reserved | blocked | error
+    var state = "empty"; // empty | invalid | checking | free | taken | claimed | reserved | blocked | error
     var seq = 0;         // discards responses from superseded keystrokes
     var timer = null;
 
@@ -60,6 +60,7 @@
       else if (state === "checking") { text = "Checking availability…"; }
       else if (state === "free") { cls += " notice-ok"; text = "“" + name + "” is available."; }
       else if (state === "taken") { cls += " notice-warn"; text = "“" + name + "” is already a campaign."; }
+      else if (state === "claimed") { cls += " notice-warn"; text = "“" + name + "” is being set up by someone right now."; }
       else if (state === "reserved") { cls += " notice-error"; text = "“" + name + "” is reserved and can't be used."; }
       else if (state === "blocked") { cls += " notice-error"; text = "“" + name + "” has been blocked and can't be used."; }
       else if (state === "invalid") { cls += " notice-error"; text = "Use 3–40 characters: lowercase letters, digits, and single internal hyphens."; }
@@ -82,6 +83,7 @@
         if (mine !== seq) return; // a later keystroke already superseded this
         if (res.type === "opaqueredirect" || res.status === 302) state = "taken";
         else if (res.status === 404) state = "free";
+        else if (res.status === 409) state = "claimed";
         else if (res.status === 403) state = "reserved";
         else if (res.status === 410) state = "blocked";
         else if (res.status === 400) state = "invalid";

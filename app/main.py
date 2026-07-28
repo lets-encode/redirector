@@ -10,22 +10,40 @@ no analytics — see README.md.
 The landing page does not register on submit. "Create campaign" probes
 GET /{name} over AJAX and, when the name is free, forwards the browser to the
 campaign app's "start a new campaign" page (${CAMPAIGN_APP_BASE}/c?slug=<name>),
-where the name stays editable. The name is registered only later — after the
-campaign app has created the GitHub repo — when it calls POST /register with the
-name and the new repo's numeric id. GET /{name} uses distinct status codes the
-probe can tell apart (free vs reserved vs malformed).
+where the name stays editable. GET /{name} uses distinct status codes the probe
+can tell apart (free vs claimed vs reserved vs malformed).
+
+A name is taken in two steps, because the repo id it is stored against does not
+exist until the campaign app has created the repo — and asking for the name only
+then would leave the whole setup exposed to losing it at the last moment:
+
+    POST /claim     holds the name the moment the organiser picks it, against a
+                    claim token, for CLAIM_TTL_MINUTES. No repo id needed.
+    POST /register  presents that token once the repo exists and turns the claim
+                    into the live campaign.
+
+So a claim is a lease on a name. The lease running out does not revoke the
+token — it only lets someone else take the name — so a long setup loses the name
+only if somebody actually wanted it. A claim nobody promotes occupies nothing
+once it has run out; it is dropped on the next write and read as free before
+that, so no sweeper is needed.
 
 Route map (public):
     GET  /                → landing page; JS probes GET /{name}, forwards if free
+    POST /claim           → { name } → holds it: 201 { claim_token, expires_at },
+                            409 if occupied, 422 on an invalid name.
+    DELETE /claim/{name}  → { claim_token } → gives the name back (the organiser
+                            renamed the campaign before its repo existed).
     POST /register        → JSON API the campaign app calls after creating the
-                            repo: { name, repo_id } → stores the mapping. 201 on
-                            success, 409 on collision, 422 on an invalid name.
+                            repo: { name, repo_id, claim_token } → stores the
+                            mapping. 201 on success, 409 on collision, 422 on an
+                            invalid name.
     GET  /api/slug/{name} → JSON resolver for the campaign app:
                             { name, status, repo_id } (repo_id only when active).
     GET  /{name}          → live slug: 302 to the campaign page (or admin-set URL)
                             free name: 404 + "claim this name?" page
-                            reserved name: 403 · malformed name: 400
-                            tombstoned (blocked): 410
+                            claimed name: 409 · reserved name: 403
+                            malformed name: 400 · tombstoned (blocked): 410
 
 Route map (admin — see README for the auth assumption):
     GET    /admin/slugs         → list everything (JSON)
@@ -46,8 +64,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from . import validation
-from .config import Settings
-from .db import SlugExists, Store
+from .config import CLAIM_TTL_MINUTES, Settings
+from .db import SlugExists, Store, in_minutes_iso, now_iso
 
 _HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -59,12 +77,31 @@ def _path_is_percent_encoded(request: Request) -> bool:
     return b"%" in request.scope.get("raw_path", b"")
 
 
+def _occupying(row) -> bool:
+    """Whether a row still occupies its name. A claim that has run out does not:
+    reads report the name as free, and the next write drops the row."""
+    return row is not None and not (
+        row["status"] == "pending" and row["expires_at"] < now_iso()
+    )
+
+
+class ClaimBody(BaseModel):
+    name: str
+
+
+class ReleaseBody(BaseModel):
+    claim_token: str
+
+
 class RegisterBody(BaseModel):
     name: str
     repo_id: int
     # Which forge repo_id belongs to, so ids from different forges never collide.
     # Defaults to github for existing single-forge callers.
     forge: str = "github"
+    # The token POST /claim issued for this name. Absent only for a name that was
+    # never claimed, which must then still be free.
+    claim_token: str | None = None
 
 
 class ReserveBody(BaseModel):
@@ -103,17 +140,61 @@ def create_app(settings: Settings) -> FastAPI:
     def landing(request: Request):
         return _render_landing(request)
 
+    @app.post("/claim", status_code=201)
+    def claim(body: ClaimBody):
+        """Hold a name for the caller before it has a repo to register against,
+        so the rest of a campaign's setup cannot lose it. The returned token is
+        the right to activate the name later (POST /register) or to give it back
+        (DELETE /claim/{name}). Occupied name → 409, invalid name → 422."""
+        name = body.name.strip()
+        error = validation.registration_error(name)
+        if error is not None:
+            raise HTTPException(status_code=422, detail=error)
+        store.drop_expired_claim(name)
+        claim_token = secrets.token_urlsafe(24)
+        expires_at = in_minutes_iso(CLAIM_TTL_MINUTES)
+        try:
+            store.create_pending(name, claim_token, expires_at)
+        except SlugExists:
+            raise HTTPException(status_code=409, detail=f"'{name}' is already taken")
+        return JSONResponse(
+            {
+                "name": name,
+                "status": "pending",
+                "claim_token": claim_token,
+                "expires_at": expires_at,
+            },
+            status_code=201,
+        )
+
+    @app.delete("/claim/{name}")
+    def release(name: str, body: ReleaseBody):
+        """Give a claimed name back, so a campaign renamed before its repo exists
+        does not leave its first name held. 404 if the name is not claimed under
+        this token."""
+        if not store.release(name, body.claim_token):
+            raise HTTPException(status_code=404, detail=f"'{name}' is not claimed by you")
+        return {"name": name, "status": "free"}
+
     @app.post("/register")
     def register(body: RegisterBody):
         """Registration API the campaign app calls AFTER creating the repo,
-        passing the chosen name, the repo's numeric id, and its forge (the forge
-        qualifies the id so different forges' ids never collide). Idempotent: a
-        repeat with the same (forge, repo_id) succeeds (200). A different repo on
+        passing the chosen name, the repo's numeric id, its forge (the forge
+        qualifies the id so different forges' ids never collide) and the token the
+        name was claimed under. Activating an own claim works even after the claim
+        has run out, as long as nobody else has taken the name since. Idempotent:
+        a repeat with the same (forge, repo_id) succeeds (200). A different repo on
         an occupied name is a genuine collision (409). Invalid name → 422."""
         name = body.name.strip()
         error = validation.registration_error(name)
         if error is not None:
             raise HTTPException(status_code=422, detail=error)
+        active = {"name": name, "status": "active", "forge": body.forge, "repo_id": body.repo_id}
+        if store.activate(name, body.forge, body.repo_id, body.claim_token):
+            return JSONResponse(active, status_code=201)
+        # No claim of ours to activate: the name must be free — either never
+        # claimed, or claimed by someone who let it run out.
+        store.drop_expired_claim(name)
         try:
             store.create_active(name, body.forge, body.repo_id)
         except SlugExists:
@@ -124,25 +205,20 @@ def create_app(settings: Settings) -> FastAPI:
                 and row["forge"] == body.forge
                 and row["repo_id"] == body.repo_id
             ):
-                return JSONResponse(
-                    {"name": name, "status": "active", "forge": body.forge, "repo_id": body.repo_id}
-                )
+                return JSONResponse(active)
             raise HTTPException(status_code=409, detail=f"'{name}' is already taken")
-        return JSONResponse(
-            {"name": name, "status": "active", "forge": body.forge, "repo_id": body.repo_id},
-            status_code=201,
-        )
+        return JSONResponse(active, status_code=201)
 
     @app.get("/api/slug/{name}")
     def api_slug(request: Request, name: str):
         """JSON resolver for the campaign app: report a name's state and, when it
         is a live campaign, its forge + repo id. Malformed names are 400; every
-        other state (free / active / reserved / tombstoned) is 200 with a
-        `status`."""
+        other state (free / pending / active / reserved / tombstoned) is 200 with
+        a `status`."""
         if _path_is_percent_encoded(request) or validation.syntax_error(name):
             raise HTTPException(status_code=400, detail=validation.ERR_SYNTAX)
         row = store.get(name)
-        if row is None:
+        if not _occupying(row):
             status = "reserved" if validation.registration_error(name) else "free"
             return JSONResponse({"name": name, "status": status, "forge": None, "repo_id": None})
         active = row["status"] == "active"
@@ -171,10 +247,11 @@ def create_app(settings: Settings) -> FastAPI:
     def resolve(request: Request, name: str):
         """Resolve a slug for a browser. Renders a friendly page at a distinct
         status code for each state — 302 live, 404 free (auto-forwards to the
-        campaign app's setup page via claim.html's script), 403 reserved, 400
-        malformed, 410 tombstoned (blocked). The status codes are also what the
-        landing page's fetch probe reads (it never runs the page scripts), so a
-        direct visit forwards while the probe still tells the states apart."""
+        campaign app's setup page via claim.html's script), 409 claimed by a setup
+        in progress, 403 reserved, 400 malformed, 410 tombstoned (blocked). The
+        status codes are also what the landing page's fetch probe reads (it never
+        runs the page scripts), so a direct visit forwards while the probe still
+        tells the states apart."""
         if _path_is_percent_encoded(request) or validation.syntax_error(name):
             return templates.TemplateResponse(
                 request, "notice.html",
@@ -185,7 +262,7 @@ def create_app(settings: Settings) -> FastAPI:
                 status_code=400,
             )
         row = store.get(name)
-        if row is None:
+        if not _occupying(row):
             if validation.registration_error(name):  # syntax already passed → reserved
                 return templates.TemplateResponse(
                     request, "notice.html",
@@ -202,6 +279,16 @@ def create_app(settings: Settings) -> FastAPI:
         if row["status"] == "tombstoned":
             return templates.TemplateResponse(
                 request, "gone.html", {"name": name}, status_code=410
+            )
+        if row["status"] == "pending":
+            # Held by a setup in progress: there is no campaign to send anyone to
+            # yet, and the name is not free either.
+            return templates.TemplateResponse(
+                request, "notice.html",
+                {"heading": "That name is being set up",
+                 "message": f"Someone is setting up a campaign called “{name}” right now. "
+                            "If it isn't finished, the name becomes free again later."},
+                status_code=409,
             )
         destination = row["destination_url"] or settings.campaign_page_url(name)
         return RedirectResponse(destination, status_code=302)
@@ -240,6 +327,7 @@ def create_app(settings: Settings) -> FastAPI:
         parsed = urlparse(body.destination_url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise HTTPException(status_code=422, detail="destination_url must be an absolute http(s) URL")
+        store.drop_expired_claim(name)
         try:
             store.create_reserved(name, body.destination_url, actor, body.notes)
         except SlugExists:

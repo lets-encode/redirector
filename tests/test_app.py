@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,9 +21,26 @@ def client(tmp_path):
     return TestClient(create_app(settings), follow_redirects=False)
 
 
-def register(client, name, repo_id=12345, forge="github"):
+def register(client, name, repo_id=12345, forge="github", claim_token=None):
     """The campaign app registers a name against a created repo's (forge, id)."""
-    return client.post("/register", json={"name": name, "repo_id": repo_id, "forge": forge})
+    return client.post(
+        "/register",
+        json={"name": name, "repo_id": repo_id, "forge": forge, "claim_token": claim_token},
+    )
+
+
+def claim(client, name):
+    """The campaign app holds a name before the repo it will belong to exists."""
+    return client.post("/claim", json={"name": name})
+
+
+def expire_claim(client, name):
+    """Backdate a claim, standing in for CLAIM_TTL_MINUTES passing."""
+    with sqlite3.connect(client.app.state.store.db_path) as conn:
+        conn.execute(
+            "UPDATE slugs SET expires_at = '2020-01-01T00:00:00+00:00' WHERE name = ?",
+            (name,),
+        )
 
 
 # ------------------------------------------------------------- happy path
@@ -78,6 +97,93 @@ def test_landing_page_probes_and_forwards(client):
     assert 'action="/register"' not in r.text
     assert 'id="create-form"' in r.text
     assert f'data-campaign-base="{BASE}"' in r.text
+
+
+# ------------------------------------------------------------------- claims
+
+def test_claim_then_register_with_token(client):
+    r = claim(client, "held-name")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["status"] == "pending"
+    assert body["claim_token"]
+
+    r = register(client, "held-name", repo_id=77, claim_token=body["claim_token"])
+    assert r.status_code == 201
+    assert client.get("/held-name").status_code == 302
+
+
+def test_claimed_name_is_occupied_but_not_a_campaign(client):
+    claim(client, "mid-setup")
+    # No campaign to send anyone to yet, and not free either.
+    r = client.get("/mid-setup")
+    assert r.status_code == 409
+    assert "being set up" in r.text
+    assert "data-forward" not in r.text  # never offered for the taking
+    assert client.get("/api/slug/mid-setup").json() == {
+        "name": "mid-setup", "status": "pending", "forge": None, "repo_id": None
+    }
+    # Nobody else can claim or register it while the claim stands.
+    assert claim(client, "mid-setup").status_code == 409
+    assert register(client, "mid-setup", repo_id=2).status_code == 409
+
+
+def test_register_needs_the_claims_own_token(client):
+    token = claim(client, "someones-name").json()["claim_token"]
+    assert register(client, "someones-name", repo_id=5, claim_token="not-it").status_code == 409
+    assert register(client, "someones-name", repo_id=5, claim_token=token).status_code == 201
+
+
+def test_release_frees_a_claimed_name(client):
+    token = claim(client, "second-thoughts").json()["claim_token"]
+    # The wrong token gives nothing away.
+    r = client.request("DELETE", "/claim/second-thoughts", json={"claim_token": "nope"})
+    assert r.status_code == 404
+    assert client.get("/second-thoughts").status_code == 409
+
+    r = client.request("DELETE", "/claim/second-thoughts", json={"claim_token": token})
+    assert r.status_code == 200
+    assert client.get("/second-thoughts").status_code == 404
+    assert claim(client, "second-thoughts").status_code == 201
+
+
+def test_expired_claim_occupies_nothing(client):
+    claim(client, "abandoned")
+    expire_claim(client, "abandoned")
+    # Reported free, and free to take.
+    assert client.get("/abandoned").status_code == 404
+    assert client.get("/api/slug/abandoned").json()["status"] == "free"
+    assert claim(client, "abandoned").status_code == 201
+
+
+def test_running_out_does_not_revoke_the_claims_own_token(client):
+    # A slow setup keeps the right to its name: the claim running out only lets
+    # someone else take it, so an unclaimed name still activates afterwards.
+    token = claim(client, "slow-setup").json()["claim_token"]
+    expire_claim(client, "slow-setup")
+    r = register(client, "slow-setup", repo_id=31, claim_token=token)
+    assert r.status_code == 201
+    assert client.get("/slow-setup").status_code == 302
+
+
+def test_taken_over_claim_can_no_longer_activate(client):
+    token = claim(client, "contested").json()["claim_token"]
+    expire_claim(client, "contested")
+    assert claim(client, "contested").status_code == 201  # someone else takes it
+    r = register(client, "contested", repo_id=9, claim_token=token)
+    assert r.status_code == 409
+
+
+def test_claim_refuses_occupied_and_invalid_names(client):
+    register(client, "live-already", repo_id=3)
+    assert claim(client, "live-already").status_code == 409
+    assert claim(client, "Bad--Name").status_code == 422
+    assert claim(client, "admin").status_code == 422
+
+
+def test_register_without_a_claim_still_works_on_a_free_name(client):
+    # The registry does not require a name to have been claimed first.
+    assert register(client, "unclaimed-name", repo_id=64).status_code == 201
 
 
 # ------------------------------------------------- api resolver for the app

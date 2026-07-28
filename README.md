@@ -38,15 +38,21 @@ the repo's current owner/name in the background.
 | Request | Situation | Result |
 |---|---|---|
 | `GET /` | — | `200` landing page; *Create campaign* probes `GET /<name>` client-side (see below) |
-| `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/?campaign=<name>` |
+| `GET /<name>` | free | `404` + *“no campaign called this yet — start one?”* claim page linking to `${CAMPAIGN_APP_BASE}/c?slug=<name>` |
 | `GET /<name>` | active | `302` to `${CAMPAIGN_APP_BASE}/campaign/<name>` (or the admin-set URL for reserved names) |
+| `GET /<name>` | claimed by a setup in progress | `409` |
 | `GET /<name>` | reserved | `403` |
 | `GET /<name>` | malformed / percent-encoded | `400` |
 | `GET /<name>` | tombstoned | `410` blocked page |
 | `GET /api/slug/<name>` (from the campaign app) | any valid name | `200` JSON `{ name, status, forge, repo_id }` (`forge`/`repo_id` only when active); malformed → `400` |
-| `POST /register` (from the campaign app) | name free | store `name → (forge, repo_id)`, `201` JSON `{ name, status: "active", forge, repo_id }` |
+| `POST /claim` (from the campaign app) | name free | hold it, `201` JSON `{ name, status: "pending", claim_token, expires_at }` |
+| `POST /claim` | name occupied | `409` |
+| `POST /claim` | invalid / reserved name | `422` |
+| `DELETE /claim/<name>` + `{ claim_token }` | held under that token | free the name, `200`; otherwise `404` |
+| `POST /register` (from the campaign app) | name claimed under the given `claim_token` | store `name → (forge, repo_id)`, `201` JSON `{ name, status: "active", forge, repo_id }` |
+| `POST /register` | name free (never claimed) | same, `201` |
 | `POST /register` | same name, same (forge, repo_id) | `200` (idempotent) |
-| `POST /register` | name occupied by a different repo | `409` |
+| `POST /register` | name occupied by a different repo, or claimed by someone else | `409` |
 | `POST /register` | invalid / reserved name | `422` |
 
 The `GET /<name>` status codes are deliberately distinct so the landing page's
@@ -55,38 +61,56 @@ probe can tell the states apart without reading a cross-origin body — only a
 
 **Landing page (`GET /`)** checks availability **live as the user types**
 (debounced `GET /<name>` probes): a free name enables *Create campaign*, an
-active one shows a "Go to this campaign →" link, and reserved/blocked/malformed
-names show an inline reason. **Direct visits** to `letsenco.de/<name>` need no
-UI: a free name's `404` page auto-forwards to the campaign app's setup page (via
-a small script the fetch-probe never runs, so the status codes still work), an
-active name `302`-redirects to the campaign, and reserved/malformed/blocked
-render a friendly `403`/`400`/`410` page.
+active one shows a "Go to this campaign →" link, and claimed/reserved/blocked/
+malformed names show an inline reason. **Direct visits** to `letsenco.de/<name>`
+need no UI: a free name's `404` page auto-forwards to the campaign app's setup
+page (via a small script the fetch-probe never runs, so the status codes still
+work), an active name `302`-redirects to the campaign, and claimed/reserved/
+malformed/blocked render a friendly `409`/`403`/`400`/`410` page.
 
 ### Create flow (website ↔ campaign app)
 
-The name is registered only *after* the campaign app has created the GitHub repo,
-so the stored `repo_id` always exists. *Create campaign* on the landing page (and
-*Start* on the direct-visit claim page) both:
+A name is taken in two steps, because the `repo_id` it is stored against does not
+exist until the campaign app has created the repo:
 
-1. **probe `GET /<name>`** — only `404` (free) proceeds; `302`/`403`/`400`/`410`
+* **`POST /claim`** holds the name from the moment the organiser picks it, against
+  a claim token, for `CLAIM_TTL_MINUTES` (`app/config.py`). No repo id needed.
+* **`POST /register`** presents that token once the repo exists, turning the claim
+  into the live campaign.
+
+A claim is therefore a **lease on a name**. Running out does not revoke the token
+— it only lets someone else take the name — so a long setup loses its name only if
+somebody actually wanted it. A claim nobody promotes occupies nothing once it has
+run out: reads report the name free and the next write drops the row, so there is
+no sweeper.
+
+*Create campaign* on the landing page (and *Start* on the direct-visit claim page)
+both:
+
+1. **probe `GET /<name>`** — only `404` (free) proceeds; `302`/`409`/`403`/`400`/`410`
    show an inline message and stop;
-2. **forward the browser** to `${CAMPAIGN_APP_BASE}/?campaign=<name>`.
+2. **forward the browser** to `${CAMPAIGN_APP_BASE}/c?slug=<name>`.
 
 **Campaign-app contract.** The "start a new campaign" page lives in the campaign
 app, not here. It must:
 
-* read the proposed name from the **`campaign` query parameter** and prefill it,
+* read the proposed name from the **`slug` query parameter** and prefill it,
   keeping it editable — its handle validation must match the slug rules below so
   the created repo name is a valid slug;
+* call **`POST https://letsenco.de/claim`** with `{ name }` as soon as the
+  organiser settles on the name, keep the returned `claim_token`, and handle `409`
+  (occupied — ask for another name) and `422` (invalid or reserved). Call
+  **`DELETE /claim/<name>`** with the token if the campaign is renamed before its
+  repo exists, so the first name does not stay held;
 * after it creates the GitHub repo, call **`POST https://letsenco.de/register`**
-  with JSON `{ name, repo_id, forge }` and handle the responses: `201`/`200`
-  (registered), `409` (name taken by a different repo since the probe — offer
+  with JSON `{ name, repo_id, forge, claim_token }` and handle the responses:
+  `201`/`200` (registered), `409` (the name went to a different repo — offer
   another name / the existing campaign), `422` (invalid or reserved name);
 * resolve a name for its own routing via **`GET /api/slug/<name>`** →
   `(forge, repo_id)`, then reach the repo by id on that forge.
 
 * **Campaign-app routes** are `${CAMPAIGN_APP_BASE}/campaign/<name>` (the console)
-  and `${CAMPAIGN_APP_BASE}/?campaign=<name>` (start a campaign, name
+  and `${CAMPAIGN_APP_BASE}/c?slug=<name>` (start a campaign, name
   prefilled). They are constants at the top of `app/config.py` — adjust there if
   the campaign app's contract differs.
 * **Stored value** is the campaign's **forge + numeric repo id**, supplied by the
@@ -169,7 +193,9 @@ set -a; source .env; set +a
 .venv/bin/uvicorn app.asgi:app --host 127.0.0.1 --port 8000
 ```
 
-Tests: `.venv/bin/pip install pytest httpx && .venv/bin/python -m pytest`
+Tests: `.venv/bin/pip install pytest httpx2 && .venv/bin/python -m pytest`
+(Starlette's test client uses `httpx2`; with `httpx` it still runs, under a
+deprecation warning.)
 
 ### Docker
 
@@ -193,16 +219,21 @@ One table, `slugs`:
 | column | notes |
 |---|---|
 | `name` | PK — the slug |
-| `campaign_id` | minted UUIDv4; NULL for admin-reserved rows |
+| `forge` | which forge `repo_id` belongs to, e.g. `github`; NULL for admin-reserved rows |
+| `repo_id` | forge-native numeric repo id; NULL for admin-reserved rows |
 | `destination_url` | NULL except admin-reserved custom targets |
-| `status` | `active` / `reserved` / `tombstoned` |
+| `status` | `pending` (claimed) / `active` / `reserved` / `tombstoned` |
+| `claim_token` | set only while `pending` — the right to activate or free the name |
+| `expires_at` | set only while `pending` — after it, others may take the name |
 | `created_at` | UTC ISO-8601 |
 | `created_by` | NULL for public registrations; proxy user or `admin` for admin actions |
 | `notes` | free text, e.g. tombstone reason |
 
-Registration relies on the primary key for race safety: concurrent claims of
-the same name resolve to exactly one winner, and the loser gets the normal
-collision branch for their flow.
+Claiming and registration rely on the primary key for race safety: two attempts
+at the same name resolve to exactly one winner, and the loser gets the normal
+collision branch for their flow. Activating a claim is a single conditional
+`UPDATE` on `(name, status, claim_token)`, so it cannot promote a claim that has
+been taken over in the meantime.
 
 ## Explicitly out of scope
 
