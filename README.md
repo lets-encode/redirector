@@ -1,3 +1,8 @@
+# This repository is DEPRECATED and archived
+The code has now migrated into <https://github.com/lets-encode/lets-encode>
+ 
+---
+
 # Let's Encode! — slug registry & redirector
 
 Maps user-chosen campaign names under `https://letsenco.de/` to
